@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Bridge VS Code native theme variables to the webview DOM */
+body {
+  background-color: var(--vscode-sidebar-background);
+  color: var(--vscode-sidebar-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom minimal scrollbar to match VS Code aesthetics */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+}

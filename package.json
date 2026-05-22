@@ -1,0 +1,57 @@
+{
+  "name": "neuralis",
+  "displayName": "Neuralis",
+  "description": "DeepSeek-optimized AI coding assistant featuring high-efficiency context caching and structured reasoning token stream parsing.",
+  "version": "0.0.1",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Machine Learning"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "configuration": {
+      "title": "Neuralis Settings",
+      "properties": {
+        "neuralis.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Enter your official DeepSeek API key."
+        },
+        "neuralis.model": {
+          "type": "string",
+          "enum": ["deepseek-chat", "deepseek-reasoning"],
+          "default": "deepseek-chat",
+          "description": "Select the target model: deepseek-chat (v4 Flash) or deepseek-reasoning (Pro)."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "neuralis-sidebar-container",
+          "title": "Neuralis",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
+    "views": {
+      "neuralis-sidebar-container": [
+        {
+          "type": "webview",
+          "id": "neuralis.sidebar",
+          "name": "Neuralis Chat Room"
+        }
+      ]
+    }
+  }
+}
