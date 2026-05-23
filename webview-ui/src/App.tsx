@@ -17,6 +17,12 @@ interface Message {
   timestamp?: number;
 }
 
+// API-compatible message format (without local-only fields)
+interface ApiMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 interface Session {
   id: string;
   title: string;
@@ -27,7 +33,6 @@ interface Session {
 type Page = 'home' | 'chat' | 'settings' | 'history';
 type AiMode = 'chat' | 'planning' | 'agent' | 'coder';
 type ProMode = 'thinking' | 'non-thinking';
-type ModelOption = 'DeepSeek V4 Flash' | 'DeepSeek V4 Pro';
 
 // ===== Inline SVG Icons =====
 const NeuralisLogo = () => (
@@ -54,6 +59,14 @@ const SettingsGear = () => (
   </svg>
 );
 
+// ===== Helper Function to Convert Messages to API Format =====
+const messagesToApiFormat = (messages: Message[]): ApiMessage[] => {
+  return messages.map(msg => ({
+    role: msg.role,
+    content: msg.content,
+  }));
+};
+
 // ===== App Component =====
 const App: React.FC = () => {
   // ===== Navigation State =====
@@ -63,8 +76,8 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   
-  // ===== Model Configuration (Persisted Across Navigation) =====
-  const [selectedModel, setSelectedModel] = useState<ModelOption>('DeepSeek V4 Flash');
+  // ===== Model Configuration =====
+  const [selectedModel, setSelectedModel] = useState<string>('DeepSeek V4 Flash');
   const [proModeOption, setProModeOption] = useState<ProMode>('thinking');
   const [activeAiMode, setActiveAiMode] = useState<AiMode>('chat');
   
@@ -83,6 +96,34 @@ const App: React.FC = () => {
   const streamingMessageRef = useRef<string | null>(null);
   const streamingTimerRef = useRef<number | null>(null);
 
+  // ===== CRITICAL FIX: Use refs to avoid stale closures =====
+  const inputRef = useRef(input);
+  const messagesRef = useRef(messages);
+  const selectedModelRef = useRef(selectedModel);
+  const proModeOptionRef = useRef(proModeOption);
+  const activeAiModeRef = useRef(activeAiMode);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
+
+  useEffect(() => {
+    proModeOptionRef.current = proModeOption;
+  }, [proModeOption]);
+
+  useEffect(() => {
+    activeAiModeRef.current = activeAiMode;
+  }, [activeAiMode]);
+
   // ===== VS Code Message Handler =====
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -91,11 +132,9 @@ const App: React.FC = () => {
       switch (message.type) {
         case 'onStreamChunk':
           setMessages(prev => {
-            // Create a shallow copy to avoid direct mutation
             const newMessages = [...prev];
             let lastMsg = newMessages[newMessages.length - 1];
             
-            // Check if we need to create a new assistant message
             if (!lastMsg || lastMsg.role === 'user') {
               const newId = `assistant-${Date.now()}`;
               streamingMessageRef.current = newId;
@@ -110,13 +149,11 @@ const App: React.FC = () => {
               newMessages.push(lastMsg);
             }
             
-            // Clear any pending streaming timer
             if (streamingTimerRef.current !== null) {
               clearTimeout(streamingTimerRef.current);
               streamingTimerRef.current = null;
             }
 
-            // Route content to correct field
             if (message.isReasoning) {
               lastMsg = {
                 ...lastMsg,
@@ -129,10 +166,8 @@ const App: React.FC = () => {
               };
             }
 
-            // Update the last message
             newMessages[newMessages.length - 1] = lastMsg;
 
-            // Set a timer to prevent rapid re-renders
             streamingTimerRef.current = window.setTimeout(() => {
               streamingTimerRef.current = null;
             }, 100);
@@ -163,8 +198,8 @@ const App: React.FC = () => {
           setSelectedModel(message.model || 'DeepSeek V4 Flash');
           break;
           
-        case 'setProMode':
-          setProModeOption(message.mode || 'thinking');
+        case 'setProModeOption':
+          setProModeOption(message.proModeOption || 'thinking');
           break;
           
         case 'setAiMode':
@@ -182,36 +217,59 @@ const App: React.FC = () => {
 
     window.addEventListener('message', handleMessage);
     
-    // Cleanup function to remove listener and clear timers
     return () => {
       window.removeEventListener('message', handleMessage);
       if (streamingTimerRef.current !== null) {
         clearTimeout(streamingTimerRef.current);
       }
     };
-  }, []); // Empty dependency array - this effect should only run once
+  }, []);
 
-  // ===== Send Handler =====
+  // ===== FIXED: Send Handler using refs to avoid stale closures =====
   const handleSend = useCallback(() => {
-    if (!input.trim()) return;
+    const currentInput = inputRef.current;
+    const currentMessages = messagesRef.current;
+    
+    console.log('[App.tsx] handleSend called');
+    console.log('[App.tsx] Current input:', currentInput);
+    
+    if (!currentInput.trim()) {
+      console.log('[App.tsx] Input is empty, returning');
+      return;
+    }
     
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: input,
+      content: currentInput,
       timestamp: Date.now(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const updatedMessages = [...currentMessages, userMessage];
+    
+    // Update state
+    setMessages(updatedMessages);
+    setInput(''); // Clear input immediately
+    
+    const apiHistory = messagesToApiFormat(updatedMessages);
+    
+    console.log('[App.tsx] Sending to VS Code:', {
+      messageCount: apiHistory.length,
+      model: selectedModelRef.current,
+      proMode: proModeOptionRef.current,
+      mode: activeAiModeRef.current
+    });
+    
+    // Send full conversation history with all configuration parameters
     vscode.postMessage({ 
       command: 'sendPrompt', 
-      text: input,
-      model: selectedModel,
-      proMode: proModeOption,
-      aiMode: activeAiMode
+      messages: apiHistory,
+      model: selectedModelRef.current,
+      proModeOption: proModeOptionRef.current,
+      mode: activeAiModeRef.current
     });
-    setInput('');
-  }, [input, selectedModel, proModeOption, activeAiMode]);
+    
+  }, []); // Empty dependency array - uses refs for all dynamic values
 
   // ===== Navigation Handlers =====
   const handleNewChat = useCallback(() => {
@@ -255,67 +313,18 @@ const App: React.FC = () => {
     setCurrentPage('home');
   }, []);
 
-  // ===== Page Renderer =====
-  const renderPage = () => {
-    const recentSessions = sessions.slice(0, 4);
-
-    switch (currentPage) {
-      case 'home':
-        return (
-          <Home 
-            onNewChat={handleNewChat}
-            onViewHistory={handleNavigateHistory}
-            recentHistory={recentSessions}
-          />
-        );
-
-      case 'chat':
-        return (
-          <Chat 
-            messages={messages}
-            input={input}
-            setInput={setInput}
-            handleSend={handleSend}
-            onBack={handleNavigateHome}
-            selectedModel={selectedModel}
-            setSelectedModel={setSelectedModel}
-            proModeOption={proModeOption}
-            setProModeOption={setProModeOption}
-            activeAiMode={activeAiMode}
-            setActiveAiMode={setActiveAiMode}
-            onAttachFile={handleAttachFile}
-          />
-        );
-
-      case 'settings':
-        return <Settings />;
-
-      case 'history':
-        return (
-          <History 
-            onBack={handleHistoryBack}
-            onSessionSelect={handleSessionSelect}
-            onDeleteSession={handleDeleteSession}
-          />
-        );
-
-      default:
-        return (
-          <Home 
-            onNewChat={handleNewChat}
-            onViewHistory={handleNavigateHistory}
-            recentHistory={recentSessions}
-          />
-        );
-    }
-  };
+  // Log on mount
+  useEffect(() => {
+    console.log('[App.tsx] Mounted');
+    console.log('[App.tsx] handleSend type:', typeof handleSend);
+  }, [handleSend]);
 
   // ===== Component Return =====
   return (
     <div className="flex flex-col h-screen bg-[var(--vscode-sideBar-background)] text-[var(--vscode-foreground)]">
-      {/* ===== Ultra-Minimalist Top Bar ===== */}
+      {/* ===== Minimal Top Bar ===== */}
       <nav className="flex items-center justify-between px-3 py-2 border-b border-[var(--vscode-widget-border)] bg-[var(--vscode-editor-background)] select-none">
-        {/* Left: Neuralis Brand (Clickable Home) */}
+        {/* Left: Neuralis Brand */}
         <button
           onClick={handleNavigateHome}
           className="flex items-center gap-2 group transition-opacity duration-200 hover:opacity-80 focus:outline-none"
@@ -329,7 +338,7 @@ const App: React.FC = () => {
           </span>
         </button>
 
-        {/* Right: Isolated Settings Icon */}
+        {/* Right: Settings Icon */}
         <button
           onClick={handleNavigateSettings}
           className={`
@@ -349,12 +358,54 @@ const App: React.FC = () => {
 
       {/* ===== Main Content Area ===== */}
       <main className="flex-1 overflow-hidden relative">
-        <div 
-          key={currentPage}
-          className="absolute inset-0 animate-fadeIn"
-        >
-          {renderPage()}
-        </div>
+        {/* Home Page */}
+        {currentPage === 'home' && (
+          <div className="absolute inset-0 animate-fadeIn">
+            <Home 
+              onNewChat={handleNewChat}
+              onViewHistory={handleNavigateHistory}
+              recentHistory={sessions.slice(0, 4)}
+            />
+          </div>
+        )}
+
+        {/* Chat Page - Explicitly passing all props */}
+        {currentPage === 'chat' && (
+          <div className="absolute inset-0 animate-fadeIn">
+            <Chat 
+              messages={messages}
+              input={input}
+              setInput={setInput}
+              handleSend={handleSend} // FIXED: Now this is a stable reference that always works
+              onBack={() => setCurrentPage('home')}
+              selectedModel={selectedModel}
+              setSelectedModel={setSelectedModel}
+              proModeOption={proModeOption}
+              setProModeOption={setProModeOption}
+              activeAiMode={activeAiMode}
+              setActiveAiMode={setActiveAiMode}
+              onAttachFile={handleAttachFile}
+            />
+          </div>
+        )}
+
+        {/* Settings Page */}
+        {currentPage === 'settings' && (
+          <div className="absolute inset-0 animate-fadeIn">
+            <Settings onBack={handleNavigateHome} />
+          </div>
+        )}
+
+        {/* History Page */}
+        {currentPage === 'history' && (
+          <div className="absolute inset-0 animate-fadeIn">
+            <History 
+              onBack={handleHistoryBack}
+              onSessionSelect={handleSessionSelect}
+              onDeleteSession={handleDeleteSession}
+            />
+          </div>
+        )}
       </main>
     </div>
   );

@@ -1,4 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ChatMessage } from '../components/ChatMessage';
 
 // ===== Type Definitions =====
@@ -85,30 +89,362 @@ const NeuralisAiIcon = () => (
   </svg>
 );
 
+// ===== Markdown Renderer Components =====
+const CodeBlock = ({ language, value }: { language: string; value: string }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-4 rounded-xl overflow-hidden border border-[var(--vscode-widget-border)]/20">
+      {/* Code block header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--vscode-editor-background)]/80 border-b border-[var(--vscode-widget-border)]/10">
+        <span className="text-xs font-mono opacity-60">{language || 'code'}</span>
+        <button
+  onClick={handleCopy}
+  className="text-xs font-medium px-3 py-1 rounded-md transition-all font-sans
+    bg-[var(--vscode-button-background)] hover:bg-[var(--vscode-button-hoverBackground)] 
+    text-[var(--vscode-button-foreground)] border border-[var(--vscode-widget-border)]/20 
+    shadow-sm active:scale-95 cursor-pointer opacity-0 group-hover:opacity-100"
+>
+  {copied ? '✓ Copied!' : 'Copy Code'}
+</button>
+      </div>
+
+      {/* Syntax highlighted code */}
+      <SyntaxHighlighter
+        language={language || 'text'}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          padding: '1.25rem',
+          fontSize: '0.875rem',
+          lineHeight: '1.5',
+          background: 'var(--vscode-editor-background)',
+        }}
+        showLineNumbers={true}
+        wrapLines={false}
+        wrapLongLines={true}
+      >
+        {value}
+      </SyntaxHighlighter>
+    </div>
+  );
+};
+
+const InlineCode = ({ children }: { children: React.ReactNode }) => (
+  <code className="px-1.5 py-0.5 rounded-md text-sm font-mono
+    bg-[var(--vscode-textBlockQuote-background)]/50
+    text-[var(--vscode-textPreformat-foreground)]
+    border border-[var(--vscode-widget-border)]/20">
+    {children}
+  </code>
+);
+
+// ===== FIXED: Table Components with Proper Styling =====
+const TableWrapper = ({ children }: { children: React.ReactNode }) => (
+  <div className="overflow-x-auto my-4 max-w-full rounded-xl border border-zinc-700 overflow-hidden">
+    <table className="min-w-full divide-y divide-zinc-700 text-left table-auto border-collapse whitespace-normal">
+      {children}
+    </table>
+  </div>
+);
+
+const TableHead = ({ children }: { children: React.ReactNode }) => (
+  <thead className="bg-zinc-800/80 font-semibold text-zinc-200">
+    {children}
+  </thead>
+);
+
+const TableHeadCell = ({ children }: { children: React.ReactNode }) => (
+  <th className="px-4 py-3 border-b border-zinc-700 text-sm font-semibold whitespace-normal">
+    {children}
+  </th>
+);
+
+const TableBody = ({ children }: { children: React.ReactNode }) => (
+  <tbody className="divide-y divide-zinc-800 bg-zinc-900/30">
+    {children}
+  </tbody>
+);
+
+const TableRow = ({ children }: { children: React.ReactNode }) => (
+  <tr className="even:bg-zinc-800/30 hover:bg-zinc-800/50 transition-colors">
+    {children}
+  </tr>
+);
+
+const TableCell = ({ children }: { children: React.ReactNode }) => (
+  <td className="px-4 py-3 text-sm text-zinc-300 font-normal whitespace-normal">
+    {children}
+  </td>
+);
+
+const MarkdownList = ({ ordered, children }: { ordered: boolean; children: React.ReactNode }) => (
+  ordered ? 
+    <ol className="list-decimal list-inside my-3 space-y-1.5 ml-4 marker:text-[var(--vscode-button-background)]/60">
+      {children}
+    </ol>
+  :
+    <ul className="list-disc list-inside my-3 space-y-1.5 ml-4 marker:text-[var(--vscode-button-background)]/60">
+      {children}
+    </ul>
+);
+
+const MarkdownListItem = ({ children }: { children: React.ReactNode }) => (
+  <li className="text-sm leading-relaxed opacity-90">
+    {children}
+  </li>
+);
+
+const MarkdownParagraph = ({ children }: { children: React.ReactNode }) => (
+  <p className="text-sm leading-relaxed mb-4 last:mb-0">
+    {children}
+  </p>
+);
+
+const MarkdownHeading = ({ level, children }: { level: number; children: React.ReactNode }) => {
+  const Tag = `h${level}` as keyof JSX.IntrinsicElements;
+  const sizes = {
+    1: 'text-xl font-bold mt-6 mb-4',
+    2: 'text-lg font-semibold mt-5 mb-3',
+    3: 'text-base font-semibold mt-4 mb-2',
+    4: 'text-sm font-medium mt-3 mb-2',
+    5: 'text-sm font-medium mt-2 mb-1',
+    6: 'text-xs font-medium mt-2 mb-1',
+  };
+  
+  return (
+    <Tag className={`${sizes[level as keyof typeof sizes] || sizes[3]} text-[var(--vscode-foreground)]`}>
+      {children}
+    </Tag>
+  );
+};
+
+const MarkdownLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
+  <a 
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-[var(--vscode-button-background)] underline decoration-[var(--vscode-button-background)]/30 
+      hover:decoration-[var(--vscode-button-background)]/70 transition-all"
+  >
+    {children}
+  </a>
+);
+
+const MarkdownBlockquote = ({ children }: { children: React.ReactNode }) => (
+  <blockquote className="my-4 pl-4 border-l-4 border-[var(--vscode-button-background)]/30 
+    bg-[var(--vscode-textBlockQuote-background)]/30 rounded-r-lg py-2 pr-4">
+    <div className="text-sm italic opacity-80">
+      {children}
+    </div>
+  </blockquote>
+);
+
+const MarkdownThematicBreak = () => (
+  <hr className="my-6 border-t border-[var(--vscode-widget-border)]/20" />
+);
+
+// ===== Think Content Component =====
+const ThinkContentBlock = ({ content }: { content: string }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!content) return null;
+
+  return (
+    <div className="mt-3 mb-4">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center gap-2 text-xs font-medium opacity-50 hover:opacity-80 transition-opacity mb-2"
+      >
+        <svg 
+          width="12" 
+          height="12" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          strokeWidth="2"
+          className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+        >
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+        <span>Thinking process {isExpanded ? '(hidden)' : '(expand)'}</span>
+      </button>
+      
+      <div className={`transition-all duration-300 overflow-hidden ${isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div className="bg-[var(--vscode-editor-background)]/50 rounded-xl p-4 border border-[var(--vscode-widget-border)]/10">
+          <div className="text-xs font-mono leading-relaxed opacity-70 whitespace-pre-wrap">
+            {content}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ===== FIXED: Main Content Renderer with Table Components =====
+const MarkdownContent = ({ content, thinkContent }: { content: string; thinkContent?: string }) => {
+  return (
+    <div className="markdown-content text-sm leading-relaxed">
+      {/* Thinking/reasoning block */}
+      {thinkContent && <ThinkContentBlock content={thinkContent} />}
+
+      {/* Main markdown content with proper table rendering */}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Code blocks remain unchanged
+          code({ node, inline, className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '');
+            const language = match ? match[1] : '';
+            const value = String(children).replace(/\n$/, '');
+
+            if (!inline && value) {
+              return <CodeBlock language={language} value={value} />;
+            }
+
+            return <InlineCode>{children}</InlineCode>;
+          },
+          // FIXED: Table components with proper structure
+          table({ children }) {
+            return <TableWrapper>{children}</TableWrapper>;
+          },
+          thead({ children }) {
+            return <TableHead>{children}</TableHead>;
+          },
+          tbody({ children }) {
+            return <TableBody>{children}</TableBody>;
+          },
+          tr({ children }) {
+            return <TableRow>{children}</TableRow>;
+          },
+          th({ children }) {
+            return <TableHeadCell>{children}</TableHeadCell>;
+          },
+          td({ children }) {
+            return <TableCell>{children}</TableCell>;
+          },
+          // Lists
+          ul({ children }) {
+            return <MarkdownList ordered={false}>{children}</MarkdownList>;
+          },
+          ol({ children }) {
+            return <MarkdownList ordered={true}>{children}</MarkdownList>;
+          },
+          li({ children }) {
+            return <MarkdownListItem>{children}</MarkdownListItem>;
+          },
+          // Text elements
+          p({ children }) {
+            return <MarkdownParagraph>{children}</MarkdownParagraph>;
+          },
+          h1({ children }) {
+            return <MarkdownHeading level={1}>{children}</MarkdownHeading>;
+          },
+          h2({ children }) {
+            return <MarkdownHeading level={2}>{children}</MarkdownHeading>;
+          },
+          h3({ children }) {
+            return <MarkdownHeading level={3}>{children}</MarkdownHeading>;
+          },
+          h4({ children }) {
+            return <MarkdownHeading level={4}>{children}</MarkdownHeading>;
+          },
+          h5({ children }) {
+            return <MarkdownHeading level={5}>{children}</MarkdownHeading>;
+          },
+          h6({ children }) {
+            return <MarkdownHeading level={6}>{children}</MarkdownHeading>;
+          },
+          a({ href, children }) {
+            return <MarkdownLink href={href || '#'}>{children}</MarkdownLink>;
+          },
+          blockquote({ children }) {
+            return <MarkdownBlockquote>{children}</MarkdownBlockquote>;
+          },
+          hr() {
+            return <MarkdownThematicBreak />;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+};
+
 // ===== Named Export Chat Component =====
 export const Chat: React.FC<ChatProps> = ({
-  messages,
-  input,
+  messages = [],
+  input = '',
   setInput,
   handleSend,
   onBack,
-  selectedModel,
+  selectedModel = 'DeepSeek V4 Flash',
   setSelectedModel,
-  proModeOption,
+  proModeOption = 'thinking',
   setProModeOption,
-  activeAiMode,
+  activeAiMode = 'chat',
   setActiveAiMode,
   onAttachFile,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const handleCopyMessage = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [currentStreamContent, setCurrentStreamContent] = useState('');
+  
+  
+
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  if (messagesEndRef.current) {
+    // Kita gunakan setTimeout 0 agar browser selesai merender DOM baru 
+    // sebelum animasi scroll dijalankan, ini rahasia biar enggak patah-patah!
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'end' // Memaksa posisi berhenti tepat di batas paling bawah elemen jangkar
+      });
+    }, 50); 
+  }
+}, [messages, currentStreamContent]);
+
+  useEffect(() => {
+  const handleMessage = (event: MessageEvent) => {
+    const message = event.data;
+    switch (message.type) {
+      case 'onStreamStart':
+        setIsGenerating(true);
+        setCurrentStreamContent('');
+        break;
+      case 'onStreamChunk':
+        setIsGenerating(true);
+        setCurrentStreamContent(prev => prev + (message.value || ''));
+        break;
+      case 'onStreamEnd': 
+        setIsGenerating(false);
+        setCurrentStreamContent('');
+        break;
+      case 'clearChat':
+        setIsGenerating(false);
+        setCurrentStreamContent('');
+        break;
+    }
+  };
+  window.addEventListener('message', handleMessage);
+  return () => window.removeEventListener('message', handleMessage);
+}, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -131,12 +467,27 @@ export const Chat: React.FC<ChatProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Key handler with explicit call
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      handleSend?.();
     }
   };
+
+  // Send click handler
+  const onSendClick = () => {
+    handleSend?.();
+  };
+
+  // Log the props on mount
+  useEffect(() => {
+    console.log('[Chat.tsx] Mounted with props:', { 
+      handleSendType: typeof handleSend, 
+      setInputType: typeof setInput,
+      inputLength: input?.length,
+    });
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-[var(--vscode-sideBar-background)] text-[var(--vscode-foreground)]">
@@ -147,7 +498,7 @@ export const Chat: React.FC<ChatProps> = ({
         <div className="flex items-center gap-2">
           {/* Back Button */}
           <button
-            onClick={onBack}
+            onClick={() => onBack?.()}
             className="p-2 rounded-full hover:bg-[var(--vscode-list-hoverBackground)] transition-colors opacity-50 hover:opacity-90"
             title="Back to Home"
           >
@@ -183,7 +534,7 @@ export const Chat: React.FC<ChatProps> = ({
                 
                 <button
                   onClick={() => {
-                    setSelectedModel('DeepSeek V4 Flash');
+                    setSelectedModel?.('DeepSeek V4 Flash');
                     setIsModelDropdownOpen(false);
                   }}
                   className={`w-full text-left px-4 py-3 transition-colors hover:bg-[var(--vscode-list-hoverBackground)]
@@ -207,7 +558,7 @@ export const Chat: React.FC<ChatProps> = ({
 
                 <button
                   onClick={() => {
-                    setSelectedModel('DeepSeek V4 Pro');
+                    setSelectedModel?.('DeepSeek V4 Pro');
                     setIsModelDropdownOpen(false);
                   }}
                   className={`w-full text-left px-4 py-3 transition-colors hover:bg-[var(--vscode-list-hoverBackground)]
@@ -235,7 +586,7 @@ export const Chat: React.FC<ChatProps> = ({
                       <div className="text-[11px] font-medium opacity-50 uppercase tracking-wider">Mode</div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setProModeOption('thinking')}
+                          onClick={() => setProModeOption?.('thinking')}
                           className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all
                             ${proModeOption === 'thinking'
                               ? 'bg-[var(--vscode-button-background)]/15 text-[var(--vscode-button-background)]'
@@ -244,7 +595,7 @@ export const Chat: React.FC<ChatProps> = ({
                           🧠 Thinking
                         </button>
                         <button
-                          onClick={() => setProModeOption('non-thinking')}
+                          onClick={() => setProModeOption?.('non-thinking')}
                           className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all
                             ${proModeOption === 'non-thinking'
                               ? 'bg-[var(--vscode-button-background)]/15 text-[var(--vscode-button-background)]'
@@ -269,9 +620,9 @@ export const Chat: React.FC<ChatProps> = ({
       </div>
 
       {/* ===== Gemini-Style Chat Feed ===== */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1 overflow-y-auto scrollbar-thin scroll-smooth">
         <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
-          {messages.length === 0 && (
+          {(!messages || messages.length === 0) && (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
               {/* Neuralis Logo */}
               <div className="relative mb-6">
@@ -302,7 +653,7 @@ export const Chat: React.FC<ChatProps> = ({
                 ].map((suggestion) => (
                   <button
                     key={suggestion.text}
-                    onClick={() => setInput(suggestion.text)}
+                    onClick={() => setInput?.(suggestion.text)}
                     className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm
                       border border-[var(--vscode-widget-border)]/30
                       hover:border-[var(--vscode-button-background)]/20
@@ -318,35 +669,95 @@ export const Chat: React.FC<ChatProps> = ({
           )}
 
           {/* Message Feed */}
-          {messages.map((msg) => (
-            <div key={msg.id} className="flex gap-3 group">
-              {/* Speaker Icon */}
-              <div className="flex-shrink-0 mt-1">
-                {msg.role === 'user' ? (
-                  <div className="w-8 h-8 rounded-full bg-[var(--vscode-button-background)]/10 flex items-center justify-center">
-                    <UserIcon />
-                  </div>
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-[var(--vscode-button-background)]/10 flex items-center justify-center">
-                    <NeuralisAiIcon />
-                  </div>
-                )}
-              </div>
+          {messages && messages.map((msg) => (
+  <div 
+    key={msg.id} 
+    className={`flex gap-3 group w-full my-4 ${
+      msg.role === 'user' ? 'justify-end flex-row-reverse text-right' : 'justify-start'
+    }`}
+  >
+    {/* Speaker Icon */}
+    <div className="flex-shrink-0 mt-1">
+      {msg.role === 'user' ? (
+        <div className="w-8 h-8 rounded-full bg-[var(--vscode-button-background)]/10 flex items-center justify-center">
+          <UserIcon />
+        </div>
+      ) : (
+        <div className="w-8 h-8 rounded-full bg-[var(--vscode-button-background)]/10 flex items-center justify-center">
+          <NeuralisAiIcon />
+        </div>
+      )}
+    </div>
 
-              {/* Message Content */}
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium mb-1.5 opacity-40">
-                  {msg.role === 'user' ? 'You' : 'Neuralis'}
-                </div>
-                <ChatMessage
-                  role={msg.role}
-                  content={msg.content}
-                  thinkContent={msg.thinkContent}
-                />
-              </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
+    {/* Message Content */}
+    <div className={`flex-1 min-w-0 max-w-[85%] ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+      {/* Sender Name */}
+      <div className="text-xs font-medium mb-1.5 opacity-40">
+        {msg.role === 'user' ? 'You' : 'Neuralis'}
+      </div>
+      
+      {msg.role === 'user' ? (
+        /* Premium User Chat Bubble on the Right */
+        <div className="inline-block text-sm leading-relaxed opacity-90 whitespace-pre-wrap bg-[var(--vscode-button-background)]/10 border border-[var(--vscode-widget-border)]/20 px-4 py-2.5 rounded-2xl text-left">
+          {msg.content}
+        </div>
+      ) : (
+        /* Premium Assistant Chat Bubble on the Left */
+        <div className="inline-block text-sm leading-relaxed opacity-90 border border-[var(--vscode-widget-border)]/20 px-4 py-2.5 rounded-2xl bg-[var(--vscode-editor-background)]/30 w-full text-left">
+          <MarkdownContent content={msg.content} thinkContent={msg.thinkContent} />
+        </div>
+      )}
+
+      {/* Global Copy Message Button */}
+      <div className={`flex items-center mt-1.5 opacity-0 group-hover:opacity-60 transition-opacity gap-2 ${
+        msg.role === 'user' ? 'justify-end' : 'justify-start'
+      }`}>
+        <button
+  onClick={() => handleCopyMessage(msg.content)}
+  className="text-[10px] flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all duration-200
+    bg-transparent hover:bg-zinc-700/30
+    text-zinc-400/60 hover:text-zinc-200
+    border border-transparent hover:border-zinc-700/40
+    active:scale-95 cursor-pointer"
+  title="Copy entire message"
+>
+  <svg className="w-3 h-3 text-zinc-400 group-hover:text-zinc-200 transition-colors duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+  </svg>
+  <span className="font-medium transition-colors duration-200">Copy</span>
+</button>
+      </div>
+    </div>
+  </div>
+))}
+
+{/* Pulsing Loading Indicator ("Neuralis is thinking...") */}
+{isGenerating && !currentStreamContent && (
+  <div className="flex gap-3 justify-start my-4 w-full">
+    {/* AI Icon */}
+    <div className="flex-shrink-0 mt-1">
+      <div className="w-8 h-8 rounded-full bg-[var(--vscode-button-background)]/10 flex items-center justify-center">
+        <NeuralisAiIcon />
+      </div>
+    </div>
+    
+    {/* Loading Bubble */}
+    <div className="flex-1 min-w-0">
+      <div className="text-xs font-medium mb-1.5 opacity-40">
+        Neuralis
+      </div>
+      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-[var(--vscode-editor-background)]/50 border border-[var(--vscode-widget-border)]/10 max-w-xs">
+        <div className="flex gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-[var(--vscode-button-background)]/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="w-2 h-2 rounded-full bg-[var(--vscode-button-background)]/60 animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-2 h-2 rounded-full bg-[var(--vscode-button-background)]/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+        <span className="text-xs opacity-40 ml-1">Neuralis is thinking...</span>
+      </div>
+    </div>
+  </div>
+)}          
+<div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -373,8 +784,8 @@ export const Chat: React.FC<ChatProps> = ({
                   hover:bg-[var(--vscode-list-hoverBackground)]
                   transition-colors opacity-60 hover:opacity-90"
               >
-                <span>{AiModeConfig[activeAiMode].icon}</span>
-                <span className="hidden sm:inline">{AiModeConfig[activeAiMode].label}</span>
+                <span>{AiModeConfig[activeAiMode]?.icon}</span>
+                <span className="hidden sm:inline">{AiModeConfig[activeAiMode]?.label}</span>
                 <DropdownArrow />
               </button>
 
@@ -388,15 +799,15 @@ export const Chat: React.FC<ChatProps> = ({
                     <button
                       key={mode}
                       onClick={() => {
-                        setActiveAiMode(mode);
+                        setActiveAiMode?.(mode);
                         setIsModeDropdownOpen(false);
                       }}
                       className={`w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-[var(--vscode-list-hoverBackground)]
                         ${activeAiMode === mode ? 'bg-[var(--vscode-button-background)]/5 text-[var(--vscode-button-background)]' : ''}`}
                     >
                       <div className="flex items-center gap-2">
-                        <span>{AiModeConfig[mode].icon}</span>
-                        <span>{AiModeConfig[mode].label}</span>
+                        <span>{AiModeConfig[mode]?.icon}</span>
+                        <span>{AiModeConfig[mode]?.label}</span>
                       </div>
                     </button>
                   ))}
@@ -411,7 +822,7 @@ export const Chat: React.FC<ChatProps> = ({
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => setInput?.(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Message Neuralis..."
               className="flex-1 bg-transparent resize-none min-h-[24px] max-h-[150px] py-1.5 px-1
@@ -424,7 +835,7 @@ export const Chat: React.FC<ChatProps> = ({
             <div className="flex items-center gap-1">
               {/* Attach File */}
               <button
-                onClick={onAttachFile}
+                onClick={() => onAttachFile?.()}
                 className="p-2 rounded-lg opacity-40 hover:opacity-70 hover:bg-[var(--vscode-list-hoverBackground)] transition-all"
                 title="Attach file"
               >
@@ -433,14 +844,15 @@ export const Chat: React.FC<ChatProps> = ({
 
               {/* Send Button */}
               <button
-                onClick={handleSend}
-                disabled={!input.trim()}
+                onClick={onSendClick}
+                disabled={!input?.trim()}
                 className="p-2 rounded-lg transition-all duration-200
                   text-[var(--vscode-button-background)]
                   disabled:opacity-20 disabled:cursor-not-allowed
                   enabled:hover:bg-[var(--vscode-button-background)]/10
                   enabled:hover:scale-105 active:scale-95"
                 title="Send message"
+                id="send-button"
               >
                 <SendIcon />
               </button>
@@ -451,7 +863,7 @@ export const Chat: React.FC<ChatProps> = ({
           <div className="flex items-center justify-center gap-2 mt-2 text-[10px] opacity-30">
             <span>{selectedModel}</span>
             <span>·</span>
-            <span>{AiModeConfig[activeAiMode].icon} {AiModeConfig[activeAiMode].label}</span>
+            <span>{AiModeConfig[activeAiMode]?.icon} {AiModeConfig[activeAiMode]?.label}</span>
             {selectedModel === 'DeepSeek V4 Pro' && (
               <>
                 <span>·</span>

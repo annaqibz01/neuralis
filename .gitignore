@@ -1,9 +1,9 @@
 # ====================================================================
-# TEMPLATE .GITIGNORE SUPER LENGKAP
+# COMPREHENSIVE .GITIGNORE TEMPLATE
 # ====================================================================
 
 # --------------------------------------------------------------------
-# SISTEM OPERASI (OS SPECIFIC)
+# OPERATING SYSTEM (OS SPECIFIC)
 # --------------------------------------------------------------------
 # macOS
 .DS_Store
@@ -38,7 +38,7 @@ $RECYCLE.BIN/
 .crumbs
 
 # --------------------------------------------------------------------
-# IDE DAN EDITOR (EDITORS & IDEs)
+# IDEs AND EDITORS (EDITORS & IDEs)
 # --------------------------------------------------------------------
 # VS Code
 .vscode/
@@ -46,7 +46,7 @@ $RECYCLE.BIN/
 *.code-workspace
 .history/
 
-# JetBrains (IntelliJ, WebStorm, PyCharm, PhpStorm, dll)
+# JetBrains (IntelliJ, WebStorm, PyCharm, PhpStorm, etc.)
 .idea/
 *.iwb
 *.iml
@@ -80,7 +80,7 @@ tmp/
 [._]ss[a-z]
 
 # --------------------------------------------------------------------
-# BAHASA & FRAMEWORK POPULER
+# POPULAR LANGUAGES & FRAMEWORKS
 # --------------------------------------------------------------------
 
 # Node.js / JavaScript / TypeScript
@@ -177,7 +177,7 @@ target/
 Cargo.lock
 
 # --------------------------------------------------------------------
-# DATABASE, LOG, DAN CACHE
+# DATABASE, LOG, AND CACHE
 # --------------------------------------------------------------------
 *.log
 *.sqlite
@@ -191,9 +191,9 @@ Cargo.lock
 *.pid.lock
 
 # --------------------------------------------------------------------
-# SISTEM KEAMANAN & KREDENSIAL (CRITICAL!)
+# SECURITY & CREDENTIALS (CRITICAL!)
 # --------------------------------------------------------------------
-# Selalu abaikan file konfigurasi lokal yang berisi password/API keys
+# Always ignore local configuration files containing passwords/API keys
 .env
 .env.local
 .env.development.local
@@ -223,15 +223,15 @@ out/
 .turbo/
 
 # --------------------------------------------------------------------
-# DOCKER & VIRTUALISASI
+# DOCKER & VIRTUALIZATION
 # --------------------------------------------------------------------
 .docker/
 docker-compose.override.yml
 
 # --------------------------------------------------------------------
-# DOKUMEN & DESAIN (OPSIONAL)
+# DOCUMENTS & DESIGN (OPTIONAL)
 # --------------------------------------------------------------------
-# Aktifkan jika Anda tidak ingin menyimpan file desain besar di Git
+# Enable these if you don't want to store large design files in Git
 *.psd
 *.ai
 *.cdr
