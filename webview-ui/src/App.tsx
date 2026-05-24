@@ -28,6 +28,7 @@ interface Session {
   title: string;
   timestamp: string;
   aiMode?: AiMode;
+  messages: Message[];
 }
 
 type Page = 'home' | 'chat' | 'settings' | 'history';
@@ -82,15 +83,21 @@ const App: React.FC = () => {
   const [activeAiMode, setActiveAiMode] = useState<AiMode>('chat');
   
   // ===== Session Management =====
-  const [sessions, setSessions] = useState<Session[]>([
-    { id: '1', title: 'Implementing authentication flow', timestamp: '2 hrs ago', aiMode: 'chat' },
-    { id: '2', title: 'Debugging API response issues', timestamp: '5 hrs ago', aiMode: 'coder' },
-    { id: '3', title: 'Database schema optimization', timestamp: 'Yesterday', aiMode: 'planning' },
-    { id: '4', title: 'React component refactoring', timestamp: 'Yesterday', aiMode: 'agent' },
-    { id: '5', title: 'CSS grid layout solution', timestamp: '2 days ago', aiMode: 'chat' },
-  ]);
-  
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const activeSessionIdRef = useRef(activeSessionId);
+  const sessionsRef = useRef(sessions);
+
+  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('neuralis_sessions');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setSessions(parsed);
+    }
+  }, []);
   
   // ===== Refs =====
   const streamingMessageRef = useRef<string | null>(null);
@@ -104,25 +111,13 @@ const App: React.FC = () => {
   const activeAiModeRef = useRef(activeAiMode);
 
   // Keep refs in sync with state
-  useEffect(() => {
-    inputRef.current = input;
-  }, [input]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    selectedModelRef.current = selectedModel;
-  }, [selectedModel]);
-
-  useEffect(() => {
-    proModeOptionRef.current = proModeOption;
-  }, [proModeOption]);
-
-  useEffect(() => {
-    activeAiModeRef.current = activeAiMode;
-  }, [activeAiMode]);
+  useEffect(() => { inputRef.current = input; }, [input]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+  useEffect(() => { proModeOptionRef.current = proModeOption; }, [proModeOption]);
+  useEffect(() => { activeAiModeRef.current = activeAiMode; }, [activeAiMode]);
+  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
 
   // ===== VS Code Message Handler =====
   useEffect(() => {
@@ -171,6 +166,14 @@ const App: React.FC = () => {
             streamingTimerRef.current = window.setTimeout(() => {
               streamingTimerRef.current = null;
             }, 100);
+
+            if (activeSessionIdRef.current) {
+              const updated = sessionsRef.current.map(s => 
+                s.id === activeSessionIdRef.current ? { ...s, messages: newMessages } : s
+              );
+              setSessions(updated);
+              localStorage.setItem('neuralis_sessions', JSON.stringify(updated));
+            }
 
             return newMessages;
           });
@@ -229,6 +232,8 @@ const App: React.FC = () => {
   const handleSend = useCallback(() => {
     const currentInput = inputRef.current;
     const currentMessages = messagesRef.current;
+    let currentSessionId = activeSessionIdRef.current;
+    let currentSessions = [...sessionsRef.current];
     
     console.log('[App.tsx] handleSend called');
     console.log('[App.tsx] Current input:', currentInput);
@@ -246,21 +251,35 @@ const App: React.FC = () => {
     };
 
     const updatedMessages = [...currentMessages, userMessage];
-    
-    // Update state
+
+    if (!currentSessionId) {
+      currentSessionId = 'session_' + Date.now();
+      const autoTitle = currentInput.length > 28 ? currentInput.substring(0, 28) + '...' : currentInput;
+      
+      const newSession: Session = {
+        id: currentSessionId,
+        title: autoTitle,
+        timestamp: 'Just now',
+        aiMode: activeAiModeRef.current,
+        messages: updatedMessages
+      };
+      
+      currentSessions = [newSession, ...currentSessions];
+      setActiveSessionId(currentSessionId);
+    } else {
+      currentSessions = currentSessions.map(s => 
+        s.id === currentSessionId ? { ...s, messages: updatedMessages, timestamp: 'Just now' } : s
+      );
+    }
+
+    setSessions(currentSessions);
+    localStorage.setItem('neuralis_sessions', JSON.stringify(currentSessions));
+
     setMessages(updatedMessages);
-    setInput(''); // Clear input immediately
-    
+    setInput('');
+
     const apiHistory = messagesToApiFormat(updatedMessages);
-    
-    console.log('[App.tsx] Sending to VS Code:', {
-      messageCount: apiHistory.length,
-      model: selectedModelRef.current,
-      proMode: proModeOptionRef.current,
-      mode: activeAiModeRef.current
-    });
-    
-    // Send full conversation history with all configuration parameters
+
     vscode.postMessage({ 
       command: 'sendPrompt', 
       messages: apiHistory,
@@ -268,9 +287,8 @@ const App: React.FC = () => {
       proModeOption: proModeOptionRef.current,
       mode: activeAiModeRef.current
     });
+  }, []);
     
-  }, []); // Empty dependency array - uses refs for all dynamic values
-
   // ===== Navigation Handlers =====
   const handleNewChat = useCallback(() => {
     setMessages([]);
@@ -299,6 +317,14 @@ const App: React.FC = () => {
 
   // ===== Session Handlers =====
   const handleSessionSelect = useCallback((sessionId: string) => {
+    const localSaved = localStorage.getItem('neuralis_sessions');
+    if (localSaved) {
+      const targetSession = JSON.parse(localSaved).find((s: any) => s.id === sessionId);
+      if (targetSession) {
+        setMessages(targetSession.messages || []);
+      }
+    }
+
     setActiveSessionId(sessionId);
     vscode.postMessage({ command: 'loadSession', sessionId });
     setCurrentPage('chat');
@@ -365,6 +391,7 @@ const App: React.FC = () => {
               onNewChat={handleNewChat}
               onViewHistory={handleNavigateHistory}
               recentHistory={sessions.slice(0, 4)}
+              onSessionSelect={handleSessionSelect}
             />
           </div>
         )}
@@ -402,6 +429,7 @@ const App: React.FC = () => {
             <History 
               onBack={handleHistoryBack}
               onSessionSelect={handleSessionSelect}
+              onSelectSession={handleSessionSelect} 
               onDeleteSession={handleDeleteSession}
             />
           </div>

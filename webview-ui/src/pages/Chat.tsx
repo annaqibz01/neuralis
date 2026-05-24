@@ -99,6 +99,16 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const codeString = (value || '').trim();
+
+  if (!language && codeString.split('\n').length === 1 && codeString.length < 50) {
+    return (
+      <code className="px-1.5 py-0.5 mx-0.5 rounded-md text-xs font-mono border bg-[var(--vscode-textBlockCode-background)] text-[var(--vscode-textBlockCode-foreground)] border-[var(--vscode-widget-border)]/20">
+        {codeString}
+      </code>
+    );
+  }
+
   return (
     <div className="relative group my-4 rounded-xl overflow-hidden border border-[var(--vscode-widget-border)]/20">
       {/* Code block header */}
@@ -107,9 +117,9 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
         <button
   onClick={handleCopy}
   className="text-xs font-medium px-3 py-1 rounded-md transition-all font-sans
-    bg-[var(--vscode-button-background)] hover:bg-[var(--vscode-button-hoverBackground)] 
-    text-[var(--vscode-button-foreground)] border border-[var(--vscode-widget-border)]/20 
-    shadow-sm active:scale-95 cursor-pointer opacity-0 group-hover:opacity-100"
+ bg-neutral-900 hover:bg-neutral-800 
+ text-neutral-100 border border-neutral-700/50 
+ shadow-sm active:scale-95 cursor-pointer opacity-0 group-hover:opacity-100"
 >
   {copied ? '✓ Copied!' : 'Copy Code'}
 </button>
@@ -402,10 +412,61 @@ export const Chat: React.FC<ChatProps> = ({
   const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentStreamContent, setCurrentStreamContent] = useState('');
-  
-  
 
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [localMessages, setLocalMessages] = useState<any[]>(messages);
 
+  useEffect(() => {
+    const savedSessions = localStorage.getItem('neuralis_sessions');
+    if (savedSessions) {
+      const parsed = JSON.parse(savedSessions);
+      setSessions(parsed);
+      if (parsed.length > 0) {
+        setActiveSessionId(parsed[0].id);
+        setLocalMessages(parsed[0].messages);
+      }
+    }
+  }, []);
+  
+  const handleSessionSendMessage = (text: string) => {
+    if (!text.trim()) return;
+
+    let currentSessionId = activeSessionId;
+    let updatedSessions = [...sessions];
+
+    if (!currentSessionId) {
+      currentSessionId = 'session_' + Date.now();
+      const autoTitle = text.length > 30 ? text.substring(0, 30) + '...' : text;
+      const newSession = {
+        id: currentSessionId,
+        title: autoTitle,
+        messages: [],
+        createdAt: Date.now()
+      };
+
+      updatedSessions = [newSession, ...updatedSessions];
+      setActiveSessionId(currentSessionId);
+    }
+
+    setSessions(updatedSessions);
+    localStorage.setItem('neuralis_sessions', JSON.stringify(updatedSessions));
+
+    handleSend?.();
+  };
+
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      setLocalMessages(messages);
+      if (activeSessionId) {
+        setSessions(prev => {
+          const updated = prev.map(s => s.id === activeSessionId ? { ...s, messages: messages } : s);
+          localStorage.setItem('neuralis_sessions', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }
+  }, [messages, activeSessionId]);
   // Auto-scroll to bottom on new messages
   useEffect(() => {
   if (messagesEndRef.current) {

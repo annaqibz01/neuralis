@@ -23,19 +23,46 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
 
   // Sample data - replace with actual session store
   useEffect(() => {
-    const mockSessions: Session[] = [
-      { id: '1', title: 'Implementing authentication flow with JWT tokens', timestamp: '2024-01-15T10:30:00', relativeTime: '2 hrs ago', aiMode: '💻 Coder', dateGroup: 'Today' },
-      { id: '2', title: 'Debugging API response issues in production', timestamp: '2024-01-15T08:15:00', relativeTime: '4 hrs ago', aiMode: '🤖 Agent', dateGroup: 'Today' },
-      { id: '3', title: 'Database schema optimization for queries', timestamp: '2024-01-14T16:45:00', relativeTime: 'Yesterday', aiMode: '🧠 Planning', dateGroup: 'Yesterday' },
-      { id: '4', title: 'React component refactoring for performance', timestamp: '2024-01-14T14:20:00', relativeTime: 'Yesterday', aiMode: '💻 Coder', dateGroup: 'Yesterday' },
-      { id: '5', title: 'CSS grid layout solution for dashboard', timestamp: '2024-01-13T11:00:00', relativeTime: '2 days ago', aiMode: '💬 Chat', dateGroup: 'Older' },
-      { id: '6', title: 'Implementing websocket connections', timestamp: '2024-01-12T09:30:00', relativeTime: '3 days ago', aiMode: '🤖 Agent', dateGroup: 'Older' },
-      { id: '7', title: 'Unit testing setup and configuration', timestamp: '2024-01-11T15:00:00', relativeTime: '4 days ago', aiMode: '🧠 Planning', dateGroup: 'Older' },
-    ];
-    setSessions(mockSessions);
-    filterSessions(mockSessions, '');
-  }, []);
+    const savedData = localStorage.getItem('neuralis_sessions');
+    if (savedData) {
+      const parsedSessions = JSON.parse(savedData);
+      const formattedSessions: Session[] = parsedSessions.map((s: any) => {
+        let modeIcon = '💬 Chat';
+        if (s.aiMode === 'coder') modeIcon = '💻 Coder';
+        if (s.aiMode === 'planning') modeIcon = '🧠 Plan';
+        if (s.aiMode === 'agent') modeIcon = '🤖 Agent';
+        const diffMs = Date.now() - (s.createdAt || Date.now());
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
+        let dateGroup = 'Older';
+        let relativeTime = 'Long ago';
+        
+        if (diffDays === 0) {
+          dateGroup = 'Today';
+          relativeTime = 'Today';
+        } else if (diffDays === 1) {
+          dateGroup = 'Yesterday';
+          relativeTime = 'Yesterday';
+        } else {
+          relativeTime = `${diffDays} days ago`;
+        }
+
+        return {
+          id: s.id,
+          title: s.title || 'Untitled Session',
+          timestamp: new Date(s.createdAt || Date.now()).toISOString(),
+          relativeTime: relativeTime,
+          aiMode: modeIcon,
+          dateGroup: dateGroup
+        };
+      });
+      setSessions(formattedSessions);
+      filterSessions(formattedSessions, searchQuery);
+    } else {
+      setSessions([]);
+      setFilteredSessions([]);
+    }
+  }, [searchQuery]);
   // Filter sessions based on search query
   const filterSessions = (sessionsList: Session[], query: string) => {
     if (!query.trim()) {
