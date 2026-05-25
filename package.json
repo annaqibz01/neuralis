@@ -2,7 +2,9 @@
   "name": "neuralis",
   "displayName": "Neuralis",
   "description": "DeepSeek-optimized AI coding assistant featuring high-efficiency context caching and structured reasoning token stream parsing.",
-  "version": "0.0.1",
+  "version": "1.2.1",
+  "publisher": "annaqibz01",
+  "icon": "icon.svg",
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
@@ -29,7 +31,10 @@
         },
         "neuralis.model": {
           "type": "string",
-          "enum": ["deepseek-chat", "deepseek-reasoning"],
+          "enum": [
+            "deepseek-chat",
+            "deepseek-reasoning"
+          ],
           "default": "deepseek-chat",
           "description": "Select the target model: deepseek-chat (v4 Flash) or deepseek-reasoning (Pro)."
         }
@@ -40,7 +45,7 @@
         {
           "id": "neuralis-sidebar-container",
           "title": "Neuralis",
-          "icon": "$(circuit-board)"
+          "icon": "icon.svg"
         }
       ]
     },
@@ -53,5 +58,10 @@
         }
       ]
     }
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/vscode": "^1.120.0",
+    "typescript": "^6.0.3"
   }
 }

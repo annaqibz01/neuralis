@@ -19,6 +19,7 @@ type ProMode = 'thinking' | 'non-thinking';
 interface ChatProps {
   messages: Message[];
   input: string;
+  vscode: any;
   setInput: (val: string) => void;
   handleSend: () => void;
   onBack: () => void;
@@ -392,6 +393,7 @@ const MarkdownContent = ({ content, thinkContent }: { content: string; thinkCont
 export const Chat: React.FC<ChatProps> = ({
   messages = [],
   input = '',
+  vscode,
   setInput,
   handleSend,
   onBack,
@@ -416,6 +418,11 @@ export const Chat: React.FC<ChatProps> = ({
   const [sessions, setSessions] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [localMessages, setLocalMessages] = useState<any[]>(messages);
+  const [attachedFile, setAttachedFile] = useState<{ name: string; content: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
+  const [showFileDropdown, setShowFileDropdown] = useState<boolean>(false);
+  const [searchFileQuery, setSearchFileQuery] = useState<string>('');
 
   useEffect(() => {
     const savedSessions = localStorage.getItem('neuralis_sessions');
@@ -501,6 +508,22 @@ export const Chat: React.FC<ChatProps> = ({
         setIsGenerating(false);
         setCurrentStreamContent('');
         break;
+      case 'setFileContext':
+        if (message.file) {
+          setAttachedFile({
+            name: message.file.name,
+            content: message.file.content
+          });
+        }
+        break;
+      
+      case 'setWorkspaceFiles':
+        if (message.files) {
+          setWorkspaceFiles(message.files);
+          setShowFileDropdown(true); // Membuka paksa menu dropdown popup di layar
+        }
+        break;
+      
     }
   };
   window.addEventListener('message', handleMessage);
@@ -523,22 +546,35 @@ export const Chat: React.FC<ChatProps> = ({
         setIsModelDropdownOpen(false);
         setIsModeDropdownOpen(false);
       }
+      if (!target.closest('.file-dropdown-container') && !target.closest('.attach-btn-trigger')) {
+        setShowFileDropdown(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleRemoveFile = () => {
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    // @ts-ignore
+    vscode.postMessage({ type: 'detachFile' });
+  };
+
   // Key handler with explicit call
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend?.();
+      handleSessionSendMessage(input);
+      setAttachedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // Send click handler
   const onSendClick = () => {
-    handleSend?.();
+    handleSessionSendMessage(input);
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Log the props on mount
@@ -879,6 +915,57 @@ export const Chat: React.FC<ChatProps> = ({
             {/* Divider */}
             <div className="w-px h-6 bg-[var(--vscode-widget-border)]/30" />
 
+            {attachedFile && (
+              <div className="absolute bottom-full left-2 mb-2 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--vscode-button-secondaryBackground)] text-xs border border-[var(--vscode-widget-border)]/30 z-40">
+                <span className="opacity-70">📄 {attachedFile.name}</span>
+                <button 
+                  onClick={handleRemoveFile}
+                  className="ml-1 text-[10px] font-bold opacity-40 hover:opacity-100 text-red-400 cursor-pointer focus:outline-none"
+                  title="Remove file"
+                  type="button"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {showFileDropdown && workspaceFiles.length > 0 && (
+              <div className="file-dropdown-container absolute bottom-full left-0 w-full max-h-48 overflow-y-auto bg-[var(--vscode-dropdown-background)] border border-[var(--vscode-widget-border)]/50 rounded-xl shadow-2xl z-50 p-2 mb-2 backdrop-blur-xl animate-fadeIn">
+                <input 
+                  type="text"
+                  placeholder="Filter file name..."
+                  value={searchFileQuery}
+                  onChange={(e) => setSearchFileQuery(e.target.value)}
+                  className="w-full px-3 py-1.5 mb-2 rounded-lg bg-[var(--vscode-input-background)] text-[var(--vscode-input-foreground)] border border-[var(--vscode-widget-border)]/30 text-xs focus:outline-none focus:border-[var(--vscode-button-background)]/50"
+                />
+                <div className="flex flex-col gap-0.5">
+                  {workspaceFiles
+                    .filter(file => file.toLowerCase().includes(searchFileQuery.toLowerCase()))
+                    .slice(0, 20)
+                    .map((filePath, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        className="text-left w-full px-3 py-1.5 rounded-md hover:bg-[var(--vscode-list-hoverBackground)] text-xs truncate text-[var(--vscode-foreground)] opacity-80 hover:opacity-100 transition-colors"
+                        onClick={() => {
+                          vscode.postMessage({ 
+                            command: 'readSelectedFileContext', 
+                            path: filePath 
+                          });
+                          setShowFileDropdown(false);
+                          setSearchFileQuery('');
+                        }}
+                      >
+                        {filePath}
+                      </button>
+                    ))}
+                  {workspaceFiles.filter(file => file.toLowerCase().includes(searchFileQuery.toLowerCase())).length === 0 && (
+                    <div className="text-xs text-center opacity-40 py-3">No matching files found</div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Textarea */}
             <textarea
               ref={textareaRef}
@@ -896,12 +983,26 @@ export const Chat: React.FC<ChatProps> = ({
             <div className="flex items-center gap-1">
               {/* Attach File */}
               <button
-                onClick={() => onAttachFile?.()}
-                className="p-2 rounded-lg opacity-40 hover:opacity-70 hover:bg-[var(--vscode-list-hoverBackground)] transition-all"
-                title="Attach file"
+                onClick={() => {
+                  if (showFileDropdown) {
+                    setShowFileDropdown(false);
+                  } else {
+                  vscode.postMessage({ command: 'requestWorkspaceFiles' });
+                  }
+                }}
+                className={`attach-btn-trigger p-2 rounded-lg transition-all ${
+                  attachedFile
+                  ? 'text-[var(--vscode-button-background)] bg-[var(--vscode-button-background)]/10 opacity-100'
+                  : 'opacity-40 hover:opacity-70 hover:bg-[var(--vscode-list-hoverBackground)]'
+                }`}
+                title="Attach Workspace File"
+                type="button"
               >
                 <AttachIcon />
               </button>
+
+              
+
 
               {/* Send Button */}
               <button

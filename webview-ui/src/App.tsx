@@ -312,7 +312,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleAttachFile = useCallback(() => {
-    vscode.postMessage({ command: 'attachFile' });
+    vscode.postMessage({ command: 'requestWorkspaceFiles' });
   }, []);
 
   // ===== Session Handlers =====
@@ -405,6 +405,7 @@ const App: React.FC = () => {
               setInput={setInput}
               handleSend={handleSend} // FIXED: Now this is a stable reference that always works
               onBack={() => setCurrentPage('home')}
+              vscode={vscode}
               selectedModel={selectedModel}
               setSelectedModel={setSelectedModel}
               proModeOption={proModeOption}
