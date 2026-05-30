@@ -1,241 +1,61 @@
-# ====================================================================
-# COMPREHENSIVE .GITIGNORE TEMPLATE
-# ====================================================================
-
-# --------------------------------------------------------------------
-# OPERATING SYSTEM (OS SPECIFIC)
-# --------------------------------------------------------------------
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon_
-._*
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
-
-# Windows
-Thumbs.db
-Thumbs.db:encryptable
-ehthumbs.db
-ehthumbs_vista.db
-*.lnk
-*.cab
-desktop.ini
-$RECYCLE.BIN/
-*.lnk
-
-# Linux
-.directory
-.Trash-*
-.fuse_hidden*
-.xdg-volume-info
-.trash
-.crumbs
-
-# --------------------------------------------------------------------
-# IDEs AND EDITORS (EDITORS & IDEs)
-# --------------------------------------------------------------------
-# VS Code
-.vscode/
-!.vscode/extensions.json
-*.code-workspace
-.history/
-
-# JetBrains (IntelliJ, WebStorm, PyCharm, PhpStorm, etc.)
-.idea/
-*.iwb
-*.iml
-*.iws
-out/
-
-# Eclipse
-.metadata/
-bin/
-tmp/
-*.tmp
-*.bak
-*.class
-.classpath
-.project
-.settings/
-
-# Sublime Text & TextMate
-*.sublime-project
-*.sublime-workspace
-.textmate_init
-
-# Vim / Emacs
-*~
-*.swp
-*.swo
-.netrwhist
-[._]*.s[a-v][a-z]
-[._]*.sw[a-p]
-[._]s[a-v][a-z]
-[._]ss[a-z]
-
-# --------------------------------------------------------------------
-# POPULAR LANGUAGES & FRAMEWORKS
-# --------------------------------------------------------------------
-
-# Node.js / JavaScript / TypeScript
+# Dependencies
 node_modules/
 /jspm_packages/
-.npm/
-.eslintcache
-.stylelintcache
-.node_repl_history
-*~procfile
-.pnpm-debug.log*
-.yarn-clean
-.yarn/
-!.yarn/releases/
-!.yarn/plugins/
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
+# Production / Build outputs
+out/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-.venv
-venv/
-ENV/
-env/
-.env/
-
-# PHP (Composer, Laravel, Symfony)
-/vendor/
-composer.phar
-.phpunit.result.cache
-Homestead.json
-Homestead.yaml
-.vagrant/
-/_ide_helper.php
-/_ide_helper_models.php
-/.phpstorm.meta.php
-/storage/*.key
-/public/storage
-/public/hot
-/public/mix-manifest.json
-
-# Java / Maven / Gradle
-.gradle/
 build/
-!gradle/wrapper/gradle-wrapper.jar
-target/
-*.ear
-*.war
-*.sar
-*.apk
-*.aar
+*.vsix
 
-# C / C++
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.exe
-*.out
-*.app
-
-# Go
-/bin/
-/pkg/
-/src/
-*.test
-*.prof
-
-# Rust
-/target/
-**/*.rs.bk
-Cargo.lock
-
-# --------------------------------------------------------------------
-# DATABASE, LOG, AND CACHE
-# --------------------------------------------------------------------
+# Logs
+logs
 *.log
-*.sqlite
-*.sqlite3
-*.db
-*.sql
-*.dump
-.pids
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Diagnostic reports (next.js / node)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
 *.pid
 *.seed
 *.pid.lock
 
-# --------------------------------------------------------------------
-# SECURITY & CREDENTIALS (CRITICAL!)
-# --------------------------------------------------------------------
-# Always ignore local configuration files containing passwords/API keys
+# Directory for instrumented code coverage downloads
+coverage
+*.lcov
+
+# Optional npm cache directory
+.npm
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables files
 .env
-.env.local
 .env.development.local
 .env.test.local
 .env.production.local
-*.pem
-*.crt
-*.key
-*.pfx
-*.p12
-credentials.json
-secrets.json
-auth.json
+.env.local
 
-# --------------------------------------------------------------------
-# COMPILER / BUILD OUTPUT & BUNDLERS
-# --------------------------------------------------------------------
-.next/
-.nuxt/
-.vuepress/dist
-.serverless/
-dist/
-build/
-out/
-.cache/
-.parcel-cache/
-.turbo/
+# OS files
+.DS_Store
+Thumbs.db
 
-# --------------------------------------------------------------------
-# DOCKER & VIRTUALIZATION
-# --------------------------------------------------------------------
-.docker/
-docker-compose.override.yml
+# VS Code local development state (Jangan di-commit agar tidak bentrok dengan dev lain)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
 
-# --------------------------------------------------------------------
-# DOCUMENTS & DESIGN (OPTIONAL)
-# --------------------------------------------------------------------
-# Enable these if you don't want to store large design files in Git
-*.psd
-*.ai
-*.cdr
-*.pdf
-*.docx
-*.xlsx
-*.pptx
+# Backup files
+*.bak
+*.swp

@@ -1,462 +1,286 @@
+/**
+ * @fileoverview
+ * Neuralis - Frontend Application Shell
+ * * Enforces an absolute viewport lock with contextual overlay routing.
+ * Maintains stable reactive boundaries for the IPC state loop.
+ */
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Home from './pages/Home';
-import { Chat } from './pages/Chat';
-import Settings from './pages/Settings';
+import {
+  IpcManager,
+  ExtensionCommand,
+  AiSettings,
+  SessionMetadata,
+  SessionDetail,
+} from './contracts/webview.contracts';
+import Chat from './pages/Chat';
 import History from './pages/History';
+import Settings from './pages/Settings';
 
-// VS Code API bridge
-// @ts-ignore
-const vscode = acquireVsCodeApi();
+type PageType = 'chat' | 'history' | 'settings';
 
-// ===== Type Definitions =====
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  thinkContent?: string;
-  timestamp?: number;
+interface AppState {
+  currentPage: PageType;
+  sessions: SessionMetadata[];
+  currentSession: SessionDetail | null;
+  aiSettings: AiSettings;
+  isStreaming: boolean;
+  streamContent: string;
+  streamReasoning: string;
+  error: string | null;
 }
 
-// API-compatible message format (without local-only fields)
-interface ApiMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface Session {
-  id: string;
-  title: string;
-  timestamp: string;
-  aiMode?: AiMode;
-  messages: Message[];
-}
-
-type Page = 'home' | 'chat' | 'settings' | 'history';
-type AiMode = 'chat' | 'planning' | 'agent' | 'coder';
-type ProMode = 'thinking' | 'non-thinking';
-
-// ===== Inline SVG Icons =====
-const NeuralisLogo = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="flex-shrink-0">
-    <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" opacity="0.3"/>
-    <circle cx="10" cy="10" r="5" fill="currentColor" opacity="0.9"/>
-    <path d="M10 6L10 14M6 10L14 10" stroke="var(--vscode-editor-background)" strokeWidth="1" strokeLinecap="round"/>
-  </svg>
-);
-
-const SettingsGear = () => (
-  <svg 
-    width="16" 
-    height="16" 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="2" 
-    strokeLinecap="round" 
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-  </svg>
-);
-
-// ===== Helper Function to Convert Messages to API Format =====
-const messagesToApiFormat = (messages: Message[]): ApiMessage[] => {
-  return messages.map(msg => ({
-    role: msg.role,
-    content: msg.content,
-  }));
+const DEFAULT_AI_SETTINGS: AiSettings = {
+  model: 'deepseek-v4-flash',
+  proOption: 'fast',
+  mode: 'chat',
 };
 
-// ===== App Component =====
+const MOCK_VSCODE_API = {
+  postMessage: (message: any) => {
+    console.log('[Mock VSCODE API] Post message:', message);
+  },
+};
+
 const App: React.FC = () => {
-  // ===== Navigation State =====
-  const [currentPage, setCurrentPage] = useState<Page>('home');
-  
-  // ===== Chat State (Persisted Across Navigation) =====
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  
-  // ===== Model Configuration =====
-  const [selectedModel, setSelectedModel] = useState<string>('DeepSeek V4 Flash');
-  const [proModeOption, setProModeOption] = useState<ProMode>('thinking');
-  const [activeAiMode, setActiveAiMode] = useState<AiMode>('chat');
-  
-  // ===== Session Management =====
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const activeSessionIdRef = useRef(activeSessionId);
-  const sessionsRef = useRef(sessions);
+  const [state, setState] = useState<AppState>({
+    currentPage: 'chat',
+    sessions: [],
+    currentSession: null,
+    aiSettings: DEFAULT_AI_SETTINGS,
+    isStreaming: false,
+    streamContent: '',
+    streamReasoning: '',
+    error: null,
+  });
 
-  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
-  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  const ipcManagerRef = useRef<IpcManager | null>(null);
+  const stateRef = useRef<AppState>(state);
+  const isStreamingRef = useRef<boolean>(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('neuralis_sessions');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSessions(parsed);
-    }
+    stateRef.current = state;
+    isStreamingRef.current = state.isStreaming;
+  }, [state]);
+
+  const updateState = useCallback((partial: Partial<AppState>) => {
+    setState(prev => ({ ...prev, ...partial }));
   }, []);
-  
-  // ===== Refs =====
-  const streamingMessageRef = useRef<string | null>(null);
-  const streamingTimerRef = useRef<number | null>(null);
 
-  // ===== CRITICAL FIX: Use refs to avoid stale closures =====
-  const inputRef = useRef(input);
-  const messagesRef = useRef(messages);
-  const selectedModelRef = useRef(selectedModel);
-  const proModeOptionRef = useRef(proModeOption);
-  const activeAiModeRef = useRef(activeAiMode);
+  const clearStreamState = useCallback(() => {
+    updateState({
+      streamContent: '',
+      streamReasoning: '',
+    });
+  }, [updateState]);
 
-  // Keep refs in sync with state
-  useEffect(() => { inputRef.current = input; }, [input]);
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
-  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
-  useEffect(() => { proModeOptionRef.current = proModeOption; }, [proModeOption]);
-  useEffect(() => { activeAiModeRef.current = activeAiMode; }, [activeAiMode]);
-  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
-  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
-
-  // ===== VS Code Message Handler =====
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      const message = event.data;
-      
-      switch (message.type) {
-        case 'onStreamChunk':
-          setMessages(prev => {
-            const newMessages = [...prev];
-            let lastMsg = newMessages[newMessages.length - 1];
-            
-            if (!lastMsg || lastMsg.role === 'user') {
-              const newId = `assistant-${Date.now()}`;
-              streamingMessageRef.current = newId;
-              
-              lastMsg = { 
-                id: newId, 
-                role: 'assistant', 
-                content: '', 
-                thinkContent: '',
-                timestamp: Date.now()
-              };
-              newMessages.push(lastMsg);
+    let isMounted = true;
+
+    const initializeIpc = async () => {
+      try {
+        const vscodeApi = (window as any).__VSCODE_API__ || MOCK_VSCODE_API;
+        const ipcManager = new IpcManager(vscodeApi);
+        ipcManagerRef.current = ipcManager;
+
+        ipcManager.receiver.on(
+          ExtensionCommand.SEND_SETTINGS,
+          (payload: { settings: AiSettings; hasApiKey: boolean }) => {
+            if (!isMounted) return;
+            updateState({
+              aiSettings: {
+                ...payload.settings,
+                apiKey: payload.hasApiKey ? payload.settings.apiKey : undefined,
+              },
+            });
+          }
+        );
+
+        ipcManager.receiver.on(
+          ExtensionCommand.SEND_SESSION_LIST,
+          (payload: { sessions: SessionMetadata[] }) => {
+            if (!isMounted) return;
+            updateState({ sessions: payload.sessions });
+          }
+        );
+
+        ipcManager.receiver.on(
+          ExtensionCommand.SEND_SESSION_DETAIL,
+          (payload: { session: SessionDetail }) => {
+            if (!isMounted) return;
+            clearStreamState();
+            updateState({
+              currentSession: payload.session,
+              currentPage: 'chat',
+              error: null,
+            });
+          }
+        );
+
+        ipcManager.receiver.on(
+          ExtensionCommand.STREAM_START,
+          () => {
+            if (!isMounted) return;
+            clearStreamState();
+            updateState({
+              isStreaming: true,
+              error: null,
+            });
+          }
+        );
+
+        ipcManager.receiver.on(
+          ExtensionCommand.STREAM_CHUNK,
+          (payload: { content?: string; reasoningContent?: string }) => {
+            if (!isMounted) return;
+            const updates: Partial<AppState> = {};
+            if (payload.content) {
+              updates.streamContent = stateRef.current.streamContent + payload.content;
             }
-            
-            if (streamingTimerRef.current !== null) {
-              clearTimeout(streamingTimerRef.current);
-              streamingTimerRef.current = null;
+            if (payload.reasoningContent) {
+              updates.streamReasoning = stateRef.current.streamReasoning + payload.reasoningContent;
             }
-
-            if (message.isReasoning) {
-              lastMsg = {
-                ...lastMsg,
-                thinkContent: (lastMsg.thinkContent || '') + (message.value || '')
-              };
-            } else {
-              lastMsg = {
-                ...lastMsg,
-                content: (lastMsg.content || '') + (message.value || '')
-              };
+            if (Object.keys(updates).length > 0) {
+              updateState(updates);
             }
+          }
+        );
 
-            newMessages[newMessages.length - 1] = lastMsg;
-
-            streamingTimerRef.current = window.setTimeout(() => {
-              streamingTimerRef.current = null;
-            }, 100);
-
-            if (activeSessionIdRef.current) {
-              const updated = sessionsRef.current.map(s => 
-                s.id === activeSessionIdRef.current ? { ...s, messages: newMessages } : s
-              );
-              setSessions(updated);
-              localStorage.setItem('neuralis_sessions', JSON.stringify(updated));
+        ipcManager.receiver.on(
+          ExtensionCommand.STREAM_END,
+          () => {
+            if (!isMounted) return;
+            clearStreamState();
+            updateState({ isStreaming: false });
+            const currentSession = stateRef.current.currentSession;
+            if (currentSession) {
+              ipcManager.sender.requestSessionById(currentSession.id);
             }
+          }
+        );
 
-            return newMessages;
+        ipcManager.receiver.on(
+          ExtensionCommand.SHOW_ERROR,
+          (payload: { message: string; code?: string }) => {
+            if (!isMounted) return;
+            updateState({
+              error: payload.message,
+              isStreaming: false,
+            });
+          }
+        );
+
+        ipcManager.initialize();
+        ipcManager.sender.notifyReady();
+      } catch (error) {
+        console.error('[App] Failed to initialize IPC:', error);
+        if (isMounted) {
+          updateState({
+            error: `Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`,
           });
-          break;
-
-        case 'onStreamComplete':
-          streamingMessageRef.current = null;
-          if (streamingTimerRef.current !== null) {
-            clearTimeout(streamingTimerRef.current);
-            streamingTimerRef.current = null;
-          }
-          break;
-
-        case 'clearChat':
-          setMessages([]);
-          setInput('');
-          streamingMessageRef.current = null;
-          break;
-
-        case 'setInput':
-          setInput(message.text || '');
-          break;
-          
-        case 'setSelectedModel':
-          setSelectedModel(message.model || 'DeepSeek V4 Flash');
-          break;
-          
-        case 'setProModeOption':
-          setProModeOption(message.proModeOption || 'thinking');
-          break;
-          
-        case 'setAiMode':
-          setActiveAiMode(message.mode || 'chat');
-          break;
-
-        case 'loadSession':
-          if (message.session && Array.isArray(message.session.messages)) {
-            setMessages(message.session.messages);
-            setActiveSessionId(message.session.id);
-          }
-          break;
+        }
       }
     };
 
-    window.addEventListener('message', handleMessage);
-    
+    initializeIpc();
+
     return () => {
-      window.removeEventListener('message', handleMessage);
-      if (streamingTimerRef.current !== null) {
-        clearTimeout(streamingTimerRef.current);
+      isMounted = false;
+      if (ipcManagerRef.current) {
+        ipcManagerRef.current.dispose();
+        ipcManagerRef.current = null;
       }
     };
-  }, []);
+  }, [updateState, clearStreamState]);
 
-  // ===== FIXED: Send Handler using refs to avoid stale closures =====
-  const handleSend = useCallback(() => {
-    const currentInput = inputRef.current;
-    const currentMessages = messagesRef.current;
-    let currentSessionId = activeSessionIdRef.current;
-    let currentSessions = [...sessionsRef.current];
-    
-    console.log('[App.tsx] handleSend called');
-    console.log('[App.tsx] Current input:', currentInput);
-    
-    if (!currentInput.trim()) {
-      console.log('[App.tsx] Input is empty, returning');
-      return;
-    }
-    
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: currentInput,
-      timestamp: Date.now(),
-    };
+  const navigateTo = useCallback((page: PageType) => {
+    updateState({ currentPage: page, error: null });
+  }, [updateState]);
 
-    const updatedMessages = [...currentMessages, userMessage];
+  const dismissError = useCallback(() => {
+    updateState({ error: null });
+  }, [updateState]);
 
-    if (!currentSessionId) {
-      currentSessionId = 'session_' + Date.now();
-      const autoTitle = currentInput.length > 28 ? currentInput.substring(0, 28) + '...' : currentInput;
-      
-      const newSession: Session = {
-        id: currentSessionId,
-        title: autoTitle,
-        timestamp: 'Just now',
-        aiMode: activeAiModeRef.current,
-        messages: updatedMessages
-      };
-      
-      currentSessions = [newSession, ...currentSessions];
-      setActiveSessionId(currentSessionId);
-    } else {
-      currentSessions = currentSessions.map(s => 
-        s.id === currentSessionId ? { ...s, messages: updatedMessages, timestamp: 'Just now' } : s
+  const renderActivePage = () => {
+    const sender = ipcManagerRef.current?.sender;
+    
+    if (!sender) {
+      return (
+        <div className="flex items-center justify-center h-full bg-[var(--vscode-editor-background)] text-[var(--vscode-editor-foreground)]">
+          <div className="w-6 h-6 border-2 border-[var(--vscode-textLink-foreground)] border-t-transparent rounded-full animate-spin"></div>
+        </div>
       );
     }
 
-    setSessions(currentSessions);
-    localStorage.setItem('neuralis_sessions', JSON.stringify(currentSessions));
-
-    setMessages(updatedMessages);
-    setInput('');
-
-    const apiHistory = messagesToApiFormat(updatedMessages);
-
-    vscode.postMessage({ 
-      command: 'sendPrompt', 
-      messages: apiHistory,
-      model: selectedModelRef.current,
-      proModeOption: proModeOptionRef.current,
-      mode: activeAiModeRef.current
-    });
-  }, []);
-    
-  // ===== Navigation Handlers =====
-  const handleNewChat = useCallback(() => {
-    setMessages([]);
-    setInput('');
-    streamingMessageRef.current = null;
-    setActiveSessionId(null);
-    setCurrentPage('chat');
-    vscode.postMessage({ command: 'newChat' });
-  }, []);
-
-  const handleNavigateHome = useCallback(() => {
-    setCurrentPage('home');
-  }, []);
-
-  const handleNavigateSettings = useCallback(() => {
-    setCurrentPage('settings');
-  }, []);
-
-  const handleNavigateHistory = useCallback(() => {
-    setCurrentPage('history');
-  }, []);
-
-  const handleAttachFile = useCallback(() => {
-    vscode.postMessage({ command: 'requestWorkspaceFiles' });
-  }, []);
-
-  // ===== Session Handlers =====
-  const handleSessionSelect = useCallback((sessionId: string) => {
-    const localSaved = localStorage.getItem('neuralis_sessions');
-    if (localSaved) {
-      const targetSession = JSON.parse(localSaved).find((s: any) => s.id === sessionId);
-      if (targetSession) {
-        setMessages(targetSession.messages || []);
-      }
+    switch (state.currentPage) {
+      case 'chat':
+        return (
+          <Chat
+            key={state.currentSession?.id || 'new-chat'}
+            session={state.currentSession}
+            aiSettings={state.aiSettings}
+            isStreaming={state.isStreaming}
+            streamContent={state.streamContent}
+            streamReasoning={state.streamReasoning}
+            onSendMessage={(prompt, files) => sender.sendMessage(prompt, state.aiSettings, files)}
+            onCancelStream={() => sender.cancelStream()}
+            onNavigateToHistory={() => navigateTo('history')}
+            onNavigateToSettings={() => navigateTo('settings')}
+            ipcSender={sender}
+          />
+        );
+      case 'history':
+        return (
+          <History
+            sessions={state.sessions}
+            currentSessionId={state.currentSession?.id}
+            onSelectSession={(sessionId) => sender.requestSessionById(sessionId)}
+            onCreateNewSession={() => sender.createNewSession()}
+            onDeleteSession={(sessionId) => sender.deleteSession(sessionId)}
+            onNavigateToChat={() => navigateTo('chat')}
+            onNavigateToSettings={() => navigateTo('settings')}
+            ipcSender={sender}
+          />
+        );
+      case 'settings':
+        return (
+          <Settings
+            aiSettings={state.aiSettings}
+            onSaveSettings={(settings) => sender.saveSettings(settings)}
+            onNavigateToChat={() => navigateTo('chat')}
+            onNavigateToHistory={() => navigateTo('history')}
+            ipcSender={sender}
+          />
+        );
+      default:
+        return null;
     }
+  };
 
-    setActiveSessionId(sessionId);
-    vscode.postMessage({ command: 'loadSession', sessionId });
-    setCurrentPage('chat');
-  }, []);
-
-  const handleDeleteSession = useCallback((sessionId: string) => {
-    setSessions(prev => prev.filter(s => s.id !== sessionId));
-    vscode.postMessage({ command: 'deleteSession', sessionId });
-  }, []);
-
-  const handleHistoryBack = useCallback(() => {
-    setCurrentPage('home');
-  }, []);
-
-  // Log on mount
-  useEffect(() => {
-    console.log('[App.tsx] Mounted');
-    console.log('[App.tsx] handleSend type:', typeof handleSend);
-  }, [handleSend]);
-
-  // ===== Component Return =====
   return (
-    <div className="flex flex-col h-screen bg-[var(--vscode-sideBar-background)] text-[var(--vscode-foreground)]">
-      {/* ===== Minimal Top Bar ===== */}
-      <nav className="flex items-center justify-between px-3 py-2 border-b border-[var(--vscode-widget-border)] bg-[var(--vscode-editor-background)] select-none">
-        {/* Left: Neuralis Brand */}
-        <button
-          onClick={handleNavigateHome}
-          className="flex items-center gap-2 group transition-opacity duration-200 hover:opacity-80 focus:outline-none"
-          title="Go to Home"
-        >
-          <span className="text-[var(--vscode-button-background)] group-hover:scale-105 transition-transform duration-200">
-            <NeuralisLogo />
-          </span>
-          <span className="text-sm font-semibold tracking-tight text-[var(--vscode-foreground)] opacity-80 group-hover:opacity-100 transition-opacity">
-            Neuralis
-          </span>
-        </button>
-
-        {/* Right: Settings Icon */}
-        <button
-          onClick={handleNavigateSettings}
-          className={`
-            p-1.5 rounded-md transition-all duration-300 ease-in-out
-            ${currentPage === 'settings' 
-              ? 'text-[var(--vscode-button-background)] bg-[var(--vscode-button-background)]/10 rotate-45' 
-              : 'text-[var(--vscode-foreground)] opacity-40 hover:opacity-80 hover:bg-[var(--vscode-list-hoverBackground)] hover:rotate-45'
-            }
-            focus:outline-none focus:ring-1 focus:ring-[var(--vscode-button-background)]/30
-            active:scale-90
-          `}
-          title="Settings"
-        >
-          <SettingsGear />
-        </button>
-      </nav>
-
-      {/* ===== Main Content Area ===== */}
-      <main className="flex-1 overflow-hidden relative">
-        {/* Home Page */}
-        {currentPage === 'home' && (
-          <div className="absolute inset-0 animate-fadeIn">
-            <Home 
-              onNewChat={handleNewChat}
-              onViewHistory={handleNavigateHistory}
-              recentHistory={sessions.slice(0, 4)}
-              onSessionSelect={handleSessionSelect}
-            />
-          </div>
-        )}
-
-        {/* Chat Page - Explicitly passing all props */}
-        {currentPage === 'chat' && (
-          <div className="absolute inset-0 animate-fadeIn">
-            <Chat 
-              messages={messages}
-              input={input}
-              setInput={setInput}
-              handleSend={handleSend} // FIXED: Now this is a stable reference that always works
-              onBack={() => setCurrentPage('home')}
-              vscode={vscode}
-              selectedModel={selectedModel}
-              setSelectedModel={setSelectedModel}
-              proModeOption={proModeOption}
-              setProModeOption={setProModeOption}
-              activeAiMode={activeAiMode}
-              setActiveAiMode={setActiveAiMode}
-              onAttachFile={handleAttachFile}
-            />
-          </div>
-        )}
-
-        {/* Settings Page */}
-        {currentPage === 'settings' && (
-          <div className="absolute inset-0 animate-fadeIn">
-            <Settings onBack={handleNavigateHome} />
-          </div>
-        )}
-
-        {/* History Page */}
-        {currentPage === 'history' && (
-          <div className="absolute inset-0 animate-fadeIn">
-            <History 
-              onBack={handleHistoryBack}
-              onSessionSelect={handleSessionSelect}
-              onSelectSession={handleSessionSelect} 
-              onDeleteSession={handleDeleteSession}
-            />
-          </div>
-        )}
+    <div className="w-full h-screen flex flex-col overflow-hidden bg-[var(--vscode-editor-background)] text-[var(--vscode-editor-foreground)]">
+      <main className="flex-1 w-full h-full relative overflow-hidden">
+        {renderActivePage()}
       </main>
+
+      {state.error && (
+        <div
+          className="absolute bottom-4 left-4 right-4 z-50 p-3 rounded-lg shadow-lg cursor-pointer transition-opacity duration-300 border bg-[var(--vscode-inputValidation-errorBackground)] border-[var(--vscode-inputValidation-errorBorder)]"
+          onClick={dismissError}
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-base mt-0.5">⚠️</span>
+            <span className="text-[13px] flex-1 text-[var(--vscode-errorForeground)] leading-tight">
+              {state.error}
+            </span>
+            <button className="text-[var(--vscode-errorForeground)] opacity-60 hover:opacity-100" onClick={dismissError}>
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
-// ===== Page Transition Animation =====
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(3px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  .animate-fadeIn {
-    animation: fadeIn 0.15s ease-out;
-  }
-`;
-document.head.appendChild(style);
 
 export default App;
