@@ -8,7 +8,10 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "dev:backend": "tsc -w -p ./",
+    "dev:frontend": "cd webview-ui && npm run build:watch",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -62,6 +65,7 @@
   "devDependencies": {
     "@types/node": "^25.9.1",
     "@types/vscode": "^1.120.0",
+    "concurrently": "^10.0.3",
     "typescript": "^6.0.3"
   }
 }

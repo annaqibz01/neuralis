@@ -222,6 +222,8 @@ const App: React.FC = () => {
             isStreaming={state.isStreaming}
             streamContent={state.streamContent}
             streamReasoning={state.streamReasoning}
+            globalError={state.error}
+            clearGlobalError={dismissError}
             onSendMessage={(prompt, files) => sender.sendMessage(prompt, state.aiSettings, files)}
             onCancelStream={() => sender.cancelStream()}
             onNavigateToHistory={() => navigateTo('history')}
@@ -262,23 +264,6 @@ const App: React.FC = () => {
       <main className="flex-1 w-full h-full relative overflow-hidden">
         {renderActivePage()}
       </main>
-
-      {state.error && (
-        <div
-          className="absolute bottom-4 left-4 right-4 z-50 p-3 rounded-lg shadow-lg cursor-pointer transition-opacity duration-300 border bg-[var(--vscode-inputValidation-errorBackground)] border-[var(--vscode-inputValidation-errorBorder)]"
-          onClick={dismissError}
-        >
-          <div className="flex items-start gap-2">
-            <span className="text-base mt-0.5">⚠️</span>
-            <span className="text-[13px] flex-1 text-[var(--vscode-errorForeground)] leading-tight">
-              {state.error}
-            </span>
-            <button className="text-[var(--vscode-errorForeground)] opacity-60 hover:opacity-100" onClick={dismissError}>
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

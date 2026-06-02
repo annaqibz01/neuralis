@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build --outDir ../out/webview-ui --emptyOutDir",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:watch": "vite build --outDir ../out/webview-ui --emptyOutDir --watch"
   },
   "dependencies": {
     "react": "^18.2.0",

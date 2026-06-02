@@ -663,7 +663,7 @@ export class DeepseekClient implements IDeepseekClient {
 
     webview.postMessage(
       createExtensionEnvelope(ExtensionCommand.SHOW_ERROR, {
-        message: `⚠️ ${userMessage}`,
+        message: userMessage,
         code: errorCode,
       })
     );
