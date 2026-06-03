@@ -40,6 +40,18 @@
           ],
           "default": "deepseek-chat",
           "description": "Select the target model: deepseek-chat (v4 Flash) or deepseek-reasoning (Pro)."
+        },
+        "neuralis.proOption": {
+          "type": "string",
+          "enum": ["fast", "thinking"],
+          "default": "fast",
+          "description": "Processing speed and depth preference for the AI assistant."
+        },
+        "neuralis.mode": {
+          "type": "string",
+          "enum": ["chat", "coder", "planning", "agent"],
+          "default": "chat",
+          "description": "The dynamic agent persona mode injected for AI completions."
         }
       }
     },

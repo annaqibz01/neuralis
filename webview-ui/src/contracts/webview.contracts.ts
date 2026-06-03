@@ -65,6 +65,9 @@ export enum WebviewCommand {
   SAVE_SETTINGS = 'SAVE_SETTINGS',
   REQUEST_WORKSPACE_FILES = 'REQUEST_WORKSPACE_FILES',
   READ_FILE_CONTEXT = 'READ_FILE_CONTEXT',
+  REQUEST_MODEL_LIST = 'REQUEST_MODEL_LIST',
+  ADD_MODEL = 'ADD_MODEL',
+  DELETE_MODEL = 'DELETE_MODEL',
 }
 
 export enum ExtensionCommand {
@@ -77,6 +80,7 @@ export enum ExtensionCommand {
   STREAM_CHUNK = 'STREAM_CHUNK',
   STREAM_END = 'STREAM_END',
   SHOW_ERROR = 'SHOW_ERROR',
+  SEND_MODEL_LIST = 'SEND_MODEL_LIST',
 }
 
 export type {
@@ -250,6 +254,13 @@ export class WebviewMessageSender {
    */
   public readFileContext(filePath: string): void {
     this.send(WebviewCommand.READ_FILE_CONTEXT, { filePath });
+  }
+
+  public requestModelList(): void {
+    this.send(WebviewCommand.REQUEST_MODEL_LIST, undefined);
+  }
+  public deleteModel(modelId: string): void {
+    this.send(WebviewCommand.DELETE_MODEL, { modelId });
   }
 }
 

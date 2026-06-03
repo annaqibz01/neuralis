@@ -9,9 +9,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   IpcManager,
   ExtensionCommand,
+  WebviewCommand,
   AiSettings,
   SessionMetadata,
   SessionDetail,
+  RegisteredModel
 } from './contracts/webview.contracts';
 import Chat from './pages/Chat';
 import History from './pages/History';
@@ -24,6 +26,7 @@ interface AppState {
   sessions: SessionMetadata[];
   currentSession: SessionDetail | null;
   aiSettings: AiSettings;
+  models: RegisteredModel[];
   isStreaming: boolean;
   streamContent: string;
   streamReasoning: string;
@@ -48,6 +51,7 @@ const App: React.FC = () => {
     sessions: [],
     currentSession: null,
     aiSettings: DEFAULT_AI_SETTINGS,
+    models: [],
     isStreaming: false,
     streamContent: '',
     streamReasoning: '',
@@ -170,8 +174,17 @@ const App: React.FC = () => {
           }
         );
 
+        ipcManager.receiver.on(
+          ExtensionCommand.SEND_MODEL_LIST,
+          (payload: { models: RegisteredModel[] }) => {
+            if (!isMounted) return;
+            updateState({ models: payload.models });
+          }
+        );
+
         ipcManager.initialize();
         ipcManager.sender.notifyReady();
+        ipcManager.sender.send(WebviewCommand.REQUEST_MODEL_LIST, undefined as any);
       } catch (error) {
         console.error('[App] Failed to initialize IPC:', error);
         if (isMounted) {
@@ -219,6 +232,7 @@ const App: React.FC = () => {
             key={state.currentSession?.id || 'new-chat'}
             session={state.currentSession}
             aiSettings={state.aiSettings}
+            registeredModels={state.models}
             isStreaming={state.isStreaming}
             streamContent={state.streamContent}
             streamReasoning={state.streamReasoning}
@@ -248,6 +262,7 @@ const App: React.FC = () => {
         return (
           <Settings
             aiSettings={state.aiSettings}
+            registeredModels={state.models} // <-- Oper data dari backend ke UI
             onSaveSettings={(settings) => sender.saveSettings(settings)}
             onNavigateToChat={() => navigateTo('chat')}
             onNavigateToHistory={() => navigateTo('history')}

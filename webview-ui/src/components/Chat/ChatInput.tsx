@@ -5,7 +5,7 @@ import { ContextFile } from '../../contracts/webview.contracts';
 
 interface ChatInputProps {
   initialValue: string;
-  onSendMessage: (content: string, files: ContextFile[]) => void;
+  onSendMessage: (content: string, files: ContextFile[], isReasoning: boolean) => void;
   onCancelStream: () => void;
   isStreaming: boolean;
   attachedFiles: ContextFile[];
@@ -48,7 +48,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
       const content = textareaRef.current?.value || '';
       if (!content.trim() && props.attachedFiles.length === 0) return;
       
-      props.onSendMessage(content, props.attachedFiles);
+      props.onSendMessage(content, props.attachedFiles, isReasoning);
       if (textareaRef.current) {
         textareaRef.current.value = '';
         adjustHeight();
@@ -148,7 +148,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
               onClick={() => {
                 const content = textareaRef.current?.value || '';
                 if (content.trim() || props.attachedFiles.length > 0) {
-                  props.onSendMessage(content, props.attachedFiles);
+                  props.onSendMessage(content, props.attachedFiles, isReasoning);
                   if (textareaRef.current) { textareaRef.current.value = ''; adjustHeight(); }
                 }
               }}

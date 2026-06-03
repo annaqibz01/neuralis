@@ -33,6 +33,16 @@ export interface ContextFile {
 }
 
 /**
+ * Represents a registered AI engine model in the dynamic configuration.
+ */
+export interface RegisteredModel {
+  /** Unique identifier for the model (e.g., 'gpt-4o-mini') */
+  id: string;
+  /** Human-readable display name (e.g., 'GPT-4o Mini (Custom)') */
+  name: string;
+}
+
+/**
  * Comprehensive message structure for turn-based conversations.
  * Supports DeepSeek reasoning tokens isolation and multi-file attachments.
  */
@@ -55,7 +65,7 @@ export interface Message {
  * Supported AI model identifiers.
  * 'deepseek-v4-flash' for fast responses, 'deepseek-v4-pro' for advanced reasoning.
  */
-export type AiModel = 'deepseek-v4-flash' | 'deepseek-v4-pro';
+export type AiModel = 'deepseek-v4-flash' | 'deepseek-v4-pro' | string;
 
 /**
  * Pro model internal routing options.
@@ -163,6 +173,12 @@ export enum WebviewCommand {
   REQUEST_WORKSPACE_FILES = 'REQUEST_WORKSPACE_FILES',
   /** Request file content by path - payload: { filePath: string } */
   READ_FILE_CONTEXT = 'READ_FILE_CONTEXT',
+  /** Request list of registered models - payload: undefined */
+  REQUEST_MODEL_LIST = 'REQUEST_MODEL_LIST',
+  /** Add a new custom model - payload: { model: RegisteredModel } */
+  ADD_MODEL = 'ADD_MODEL',
+  /** Delete a custom model - payload: { modelId: string } */
+  DELETE_MODEL = 'DELETE_MODEL',
 }
 
 /**
@@ -180,6 +196,9 @@ export interface WebviewCommandPayloadMap {
   [WebviewCommand.SAVE_SETTINGS]: { settings: Partial<AiSettings> };
   [WebviewCommand.REQUEST_WORKSPACE_FILES]: undefined;
   [WebviewCommand.READ_FILE_CONTEXT]: { filePath: string };
+  [WebviewCommand.REQUEST_MODEL_LIST]: undefined;
+  [WebviewCommand.ADD_MODEL]: { model: RegisteredModel };
+  [WebviewCommand.DELETE_MODEL]: { modelId: string };
 }
 
 /**
@@ -218,6 +237,8 @@ export enum ExtensionCommand {
   STREAM_END = 'STREAM_END',
   /** Show error to user - payload: { message: string, code?: string } */
   SHOW_ERROR = 'SHOW_ERROR',
+  /** Send registered model list to frontend - payload: { models: RegisteredModel[] } */
+  SEND_MODEL_LIST = 'SEND_MODEL_LIST',
 }
 
 /**
@@ -234,6 +255,7 @@ export interface ExtensionCommandPayloadMap {
   [ExtensionCommand.STREAM_CHUNK]: { content?: string; reasoningContent?: string };
   [ExtensionCommand.STREAM_END]: { finalMessage: Message };
   [ExtensionCommand.SHOW_ERROR]: { message: string; code?: string };
+  [ExtensionCommand.SEND_MODEL_LIST]: { models: RegisteredModel[] };
 }
 
 /**

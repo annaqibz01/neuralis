@@ -1,19 +1,31 @@
-import React, { useState, useCallback } from 'react';
+// webview-ui/src/pages/Settings.tsx
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { WebviewMessageSender, AiSettings, RegisteredModel, WebviewCommand } from '../contracts/webview.contracts';
+
+interface ExtendedAiSettings extends AiSettings {
+  apiKey?: string;
+}
 
 interface SettingsProps {
-  onBack: () => void;
-  onClearHistory?: () => void;
-  onSave?: (settings: SettingsState) => void;
+  aiSettings: ExtendedAiSettings;
+  registeredModels: RegisteredModel[];
+  onSaveSettings: (settings: Partial<ExtendedAiSettings>) => void;
+  onNavigateToChat: () => void;
+  ipcSender: WebviewMessageSender;
 }
 
-interface SettingsState {
-  apiKey: string;
-  selectedModel: string;
-  showReasoning: boolean;
-  autoSave: boolean;
-  themeFollowsSystem: boolean;
-  showTimestamps: boolean;
-}
+// Daftar baku model dari berbagai Provider
+const PROVIDER_MODELS = [
+  { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { id: 'deepseek-chat', label: 'DeepSeek V3 (Chat)' },
+  { id: 'deepseek-reasoner', label: 'DeepSeek R1 (Reasoner)' },
+  { id: 'gpt-4o', label: 'OpenAI GPT-4o' },
+  { id: 'gpt-4o-mini', label: 'OpenAI GPT-4o Mini' },
+  { id: 'claude-3-5-sonnet-latest', label: 'Claude 3.5 Sonnet' },
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' }
+];
 
 const EyeIcon = ({ isVisible }: { isVisible: boolean }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,268 +43,232 @@ const EyeIcon = ({ isVisible }: { isVisible: boolean }) => (
   </svg>
 );
 
-const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: () => void; label: string }) => (
-  <button
-    onClick={onChange}
-    className="flex items-center justify-between w-full py-2 px-1 group cursor-pointer"
-    aria-label={label}
-  >
-    <span className="text-sm opacity-80 group-hover:opacity-100 transition-opacity">{label}</span>
-    <div className={`
-      relative w-10 h-6 rounded-full transition-all duration-300 ease-in-out
-      ${enabled ? 'bg-[var(--vscode-button-background)]' : 'bg-[var(--vscode-input-background)]/50'}
-      hover:opacity-80
-    `}>
-      <div className={`
-        absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-md
-        transition-transform duration-300 ease-in-out
-        ${enabled ? 'translate-x-4' : 'translate-x-0'}
-      `} />
-    </div>
-  </button>
-);
-
-const NeuralisBrandIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 20 20" fill="none" className="flex-shrink-0">
-    <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" opacity="0.3"/>
-    <circle cx="10" cy="10" r="5" fill="currentColor" opacity="0.9"/>
-    <path d="M10 6L10 14M6 10L14 10" stroke="var(--vscode-editor-background)" strokeWidth="1" strokeLinecap="round"/>
-  </svg>
-);
-
 export const Settings: React.FC<SettingsProps> = ({ 
-  onBack, 
-  onClearHistory, 
-  onSave 
+  aiSettings, 
+  registeredModels,
+  onSaveSettings, 
+  onNavigateToChat,
+  ipcSender 
 }) => {
-  const [settings, setSettings] = useState<SettingsState>({
-    apiKey: '',
-    selectedModel: 'DeepSeek V4 Flash',
-    showReasoning: true,
-    autoSave: true,
-    themeFollowsSystem: true,
-    showTimestamps: false,
-  });
-
+  const [apiKey, setApiKey] = useState(aiSettings.apiKey || '');
+  const [modelId, setModelId] = useState('');
+  const [modelName, setModelName] = useState('');
+  
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleInputChange = useCallback((field: keyof SettingsState, value: string | boolean) => {
-    setSettings(prev => ({ ...prev, [field]: value }));
+  useEffect(() => {
+    if (aiSettings.apiKey) {
+      setApiKey(aiSettings.apiKey);
+    }
+  }, [aiSettings]);
+
+  // Handler click-outside untuk menutup dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSave = useCallback(async () => {
-    setIsSaving(true);
-    // Simulate save delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    if (onSave) {
-      onSave(settings);
-    }
-    setIsSaving(false);
-  }, [settings, onSave]);
+  // Saat dropdown dipilih
+  const handleModelSelect = (selectedId: string, selectedLabel: string) => {
+    setModelId(selectedId); // Hanya ID yang masuk ke state modelId
+    setModelName(selectedLabel); // Nama masuk ke state modelName
+    setIsDropdownOpen(false);
+  };
 
-  const handleClearHistory = useCallback(() => {
-    if (onClearHistory) {
-      onClearHistory();
+  const handleSaveConfiguration = useCallback(async () => {
+    if (!apiKey.trim()) return;
+    setIsSaving(true);
+
+    const currentModelId = modelId.trim() || aiSettings.model;
+    
+    // Daftarkan model jika form ID dan Name diisi
+    if (modelId.trim() && modelName.trim()) {
+      ipcSender.send(WebviewCommand.ADD_MODEL, {
+        model: { id: modelId.trim(), name: modelName.trim() }
+      });
     }
-    setShowClearConfirm(false);
-  }, [onClearHistory]);
+
+    // Simpan API Key & tetapkan model aktif
+    onSaveSettings({
+      apiKey: apiKey.trim(),
+      model: currentModelId
+    });
+
+    // Kosongkan form input model
+    setModelId('');
+    setModelName('');
+    
+    setTimeout(() => setIsSaving(false), 500);
+  }, [apiKey, modelId, modelName, aiSettings.model, onSaveSettings, ipcSender]);
+
+  const handleDeleteModel = (idToDelete: string) => {
+    ipcSender.send(WebviewCommand.DELETE_MODEL, { modelId: idToDelete });
+  };
 
   return (
     <div className="flex flex-col h-full bg-[var(--vscode-sideBar-background)] text-[var(--vscode-foreground)] overflow-hidden">
-      {/* ===== Top Navigation Bar ===== */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--vscode-widget-border)]">
-        <button
-          onClick={onBack}
-          className="p-1.5 rounded-md hover:bg-[var(--vscode-list-hoverBackground)] transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-[var(--vscode-button-background)]/30"
-          title="Back to Home"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 4L5 9L11 14" />
+      
+      {/* ===== HEADER ===== */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--vscode-widget-border)] bg-[var(--vscode-sideBar-background)] relative z-10">
+        <button onClick={onNavigateToChat} className="p-1.5 rounded-md hover:bg-[var(--vscode-list-hoverBackground)] transition-colors focus:outline-none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
         </button>
-        <h1 className="text-base font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-[14px] font-semibold tracking-wide flex-1">Engine Registration</h1>
       </div>
 
-      {/* ===== Scrollable Content ===== */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4 space-y-6 max-w-2xl mx-auto">
+      {/* ===== MAIN CONTENT AREA ===== */}
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+        <div className="max-w-xl mx-auto space-y-6">
           
-          {/* ===== AI Configuration Section ===== */}
-          <div className="bg-[var(--vscode-input-background)]/30 rounded-xl p-4 space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50">
-                <path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/>
-                <path d="M16 14H8a4 4 0 0 0-4 4v2h16v-2a4 4 0 0 0-4-4z"/>
-              </svg>
-              <h2 className="text-sm font-semibold uppercase tracking-wider opacity-60">AI Configuration</h2>
-            </div>
+          {/* INPUT DATA BLOCK */}
+          <div className="border border-[var(--vscode-widget-border)] rounded-xl bg-[var(--vscode-editor-background)]/40 p-4 space-y-5 shadow-sm">
             
-            {/* API Key Input */}
+            {/* Input 1: API Key */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium opacity-70">DeepSeek API Key</label>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--vscode-descriptionForeground)]">API Secret Key</label>
               <div className="relative">
                 <input 
                   type={showApiKey ? "text" : "password"}
-                  value={settings.apiKey}
-                  onChange={(e) => handleInputChange('apiKey', e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full bg-[var(--vscode-input-background)] text-[var(--vscode-input-foreground)] border border-[var(--vscode-widget-border)] rounded-lg p-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--vscode-button-background)]/30 focus:border-transparent transition-all duration-200 placeholder-[var(--vscode-input-placeholderForeground)]"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="w-full bg-[var(--vscode-input-background)] border border-[var(--vscode-widget-border)] rounded-lg p-2.5 pr-10 text-[13px] font-mono focus:outline-none focus:border-[var(--vscode-focusBorder)] transition-colors"
                 />
-                <button
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-70 transition-opacity"
-                >
+                <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--vscode-descriptionForeground)] hover:text-[var(--vscode-foreground)] transition-colors focus:outline-none">
                   <EyeIcon isVisible={showApiKey} />
                 </button>
               </div>
-              <p className="text-[10px] opacity-40">Your key is stored securely in VS Code's configuration</p>
             </div>
 
-            {/* Model Selection */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium opacity-70">Default Model</label>
-              <div className="relative">
-                <select
-                  value={settings.selectedModel}
-                  onChange={(e) => handleInputChange('selectedModel', e.target.value)}
-                  className="w-full bg-[var(--vscode-input-background)] text-[var(--vscode-input-foreground)] border border-[var(--vscode-widget-border)] rounded-lg p-2.5 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[var(--vscode-button-background)]/30 focus:border-transparent transition-all duration-200"
-                >
-                  <option value="DeepSeek V4 Flash">DeepSeek V4 Flash (Fast)</option>
-                  <option value="DeepSeek V4 Pro">DeepSeek V4 Pro (Premium)</option>
-                </select>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 pointer-events-none">
-                  <path d="M3 5L6 8L9 5"/>
+            {/* Input 2: Custom Dropdown Engine Selector */}
+            <div className="space-y-1.5 relative" ref={dropdownRef}>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--vscode-descriptionForeground)]">Provider Model ID</label>
+              
+              <button
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className={`w-full bg-[var(--vscode-input-background)] border rounded-lg p-2.5 text-[13px] text-left font-mono flex items-center justify-between focus:outline-none transition-colors cursor-pointer ${
+                  isDropdownOpen 
+                    ? 'border-[var(--vscode-focusBorder)] ring-1 ring-[var(--vscode-focusBorder)]/30' 
+                    : 'border-[var(--vscode-widget-border)] hover:bg-[var(--vscode-list-hoverBackground)]'
+                }`}
+              >
+                <span className={modelId ? 'text-[var(--vscode-input-foreground)]' : 'text-[var(--vscode-input-placeholderForeground)]'}>
+                  {modelId ? modelId : 'Select Provider Model...'}
+                </span>
+                {/* Ikon Chevron Kecil (Standar Dropdown UX) */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-[var(--vscode-descriptionForeground)] transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : 'rotate-0'}`}>
+                  <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
-              </div>
-            </div>
-          </div>
+              </button>
 
-          {/* ===== Interface Section ===== */}
-          <div className="bg-[var(--vscode-input-background)]/30 rounded-xl p-4 space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                <line x1="3" y1="9" x2="21" y2="9"/>
-                <line x1="9" y1="21" x2="9" y2="9"/>
-              </svg>
-              <h2 className="text-sm font-semibold uppercase tracking-wider opacity-60">Interface</h2>
-            </div>
-
-            <div className="space-y-1">
-              <ToggleSwitch
-                enabled={settings.showReasoning}
-                onChange={() => handleInputChange('showReasoning', !settings.showReasoning)}
-                label="Show AI Reasoning"
-              />
-              <ToggleSwitch
-                enabled={settings.autoSave}
-                onChange={() => handleInputChange('autoSave', !settings.autoSave)}
-                label="Auto-save Chats"
-              />
-              <ToggleSwitch
-                enabled={settings.themeFollowsSystem}
-                onChange={() => handleInputChange('themeFollowsSystem', !settings.themeFollowsSystem)}
-                label="Follow System Theme"
-              />
-              <ToggleSwitch
-                enabled={settings.showTimestamps}
-                onChange={() => handleInputChange('showTimestamps', !settings.showTimestamps)}
-                label="Show Message Timestamps"
-              />
-            </div>
-          </div>
-
-          {/* ===== Data Management Section ===== */}
-          <div className="bg-[var(--vscode-input-background)]/30 rounded-xl p-4 space-y-4">
-            <div className="flex items-center gap-2 mb-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50">
-                <ellipse cx="12" cy="5" rx="9" ry="3"/>
-                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-              </svg>
-              <h2 className="text-sm font-semibold uppercase tracking-wider opacity-60">Data Management</h2>
-            </div>
-
-            {/* Clear History Section */}
-            <div className="border border-red-500/20 rounded-lg p-3 space-y-2">
-              <div className="flex items-start gap-3">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5 text-red-400">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                  <line x1="12" y1="9" x2="12" y2="13"/>
-                  <line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-red-400">Clear All History</p>
-                  <p className="text-[10px] opacity-50 mt-0.5">This action cannot be undone. All chat sessions will be permanently deleted.</p>
-                </div>
-              </div>
-              {!showClearConfirm ? (
-                <button
-                  onClick={() => setShowClearConfirm(true)}
-                  className="w-full py-2 px-4 rounded-lg border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                >
-                  Clear All History
-                </button>
-              ) : (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowClearConfirm(false)}
-                    className="flex-1 py-2 px-4 rounded-lg border border-[var(--vscode-widget-border)] text-sm font-medium hover:bg-[var(--vscode-list-hoverBackground)] transition-all duration-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleClearHistory}
-                    className="flex-1 py-2 px-4 rounded-lg bg-red-500/80 text-white text-sm font-medium hover:bg-red-500 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500/30"
-                  >
-                    Confirm Delete
-                  </button>
+              {/* Panel Floating Dropdown Premium */}
+              {isDropdownOpen && (
+                <div className="absolute left-0 right-0 top-[calc(100%+4px)] max-h-64 overflow-y-auto border border-[var(--vscode-widget-border)] rounded-lg bg-[var(--vscode-dropdown-background)] text-[var(--vscode-dropdown-foreground)] z-[100] shadow-xl py-1 custom-scrollbar animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-[var(--vscode-descriptionForeground)] border-b border-[var(--vscode-widget-border)]/40 mb-1">
+                    Available Providers
+                  </div>
+                  {PROVIDER_MODELS.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => handleModelSelect(model.id, model.label)}
+                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--vscode-list-activeSelectionBackground)] hover:text-[var(--vscode-list-activeSelectionForeground)] transition-colors focus:outline-none flex flex-col gap-0.5 group"
+                    >
+                      <span className="text-[13px] font-semibold">{model.label}</span>
+                      <span className="text-[11px] font-mono opacity-60 group-hover:opacity-90">{model.id}</span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
+
+            {/* Input 3: Model Display Name */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--vscode-descriptionForeground)]">Model Custom Name</label>
+              <input 
+                type="text"
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+                placeholder="e.g. DeepSeek V4 Flash"
+                className="w-full bg-[var(--vscode-input-background)] border border-[var(--vscode-widget-border)] rounded-lg p-2.5 text-[13px] focus:outline-none focus:border-[var(--vscode-focusBorder)] transition-colors"
+              />
+              <p className="text-[10px] text-[var(--vscode-descriptionForeground)] opacity-80 pl-0.5">
+                Will auto-fill when a Provider Model ID is selected.
+              </p>
+            </div>
+
+            {/* ACTION SAVE BUTTON */}
+            <div className="pt-2">
+              <button
+                onClick={handleSaveConfiguration}
+                disabled={isSaving || !apiKey.trim()}
+                className="w-full py-3 px-6 rounded-lg font-semibold text-[13px] bg-[var(--vscode-button-background)] text-[var(--vscode-button-foreground)] hover:bg-[var(--vscode-button-hoverBackground)] active:scale-[0.98] transition-all disabled:opacity-40 disabled:pointer-events-none shadow-md flex justify-center items-center gap-2"
+              >
+                {isSaving ? 'Registering...' : 'Save & Register'}
+              </button>
+            </div>
+
           </div>
 
-          {/* ===== Save Button ===== */}
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className={`
-              w-full py-3 px-6 rounded-xl font-medium text-sm
-              bg-[var(--vscode-button-background)]
-              text-[var(--vscode-button-foreground)]
-              transition-all duration-300 ease-in-out
-              hover:opacity-90 hover:scale-[1.02]
-              active:scale-[0.98]
-              focus:outline-none focus:ring-2 focus:ring-[var(--vscode-button-background)]/50
-              disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100
-              shadow-lg shadow-[var(--vscode-button-background)]/20
-            `}
-          >
-            {isSaving ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                </svg>
-                Saving...
-              </span>
-            ) : (
-              'Save Settings'
-            )}
-          </button>
-        </div>
-      </div>
+          {/* TABLE MODEL REGISTRY */}
+          <div className="space-y-2">
+            <h2 className="text-[11px] font-bold uppercase tracking-wider text-[var(--vscode-descriptionForeground)] px-1">Registered Infrastructure Logs</h2>
+            
+            <div className="border border-[var(--vscode-widget-border)] rounded-xl overflow-hidden bg-[var(--vscode-editor-background)]/20 shadow-sm">
+              <div className="flex flex-col">
+                {registeredModels.length === 0 ? (
+                  <div className="p-6 text-center flex flex-col items-center justify-center gap-2">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[var(--vscode-descriptionForeground)] opacity-50">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                      <line x1="8" y1="21" x2="16" y2="21"></line>
+                      <line x1="12" y1="17" x2="12" y2="21"></line>
+                    </svg>
+                    <span className="text-[12px] text-[var(--vscode-descriptionForeground)] italic">No active models mapped inside this workspace grid.</span>
+                  </div>
+                ) : (
+                  registeredModels.map((model) => (
+                    <div key={model.id} className="flex items-center justify-between px-4 py-3 border-b border-[var(--vscode-widget-border)]/40 last:border-0 group hover:bg-[var(--vscode-list-hoverBackground)] transition-colors">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[13px] font-semibold text-[var(--vscode-foreground)] flex items-center gap-2">
+                          {model.name}
+                          {aiSettings.model === model.id && (
+                            <span className="px-1.5 py-0.5 rounded-[4px] bg-[var(--vscode-textLink-foreground)]/15 text-[var(--vscode-textLink-foreground)] text-[9px] font-black uppercase tracking-wider">Active</span>
+                          )}
+                        </span>
+                        <span className="text-[11px] text-[var(--vscode-descriptionForeground)] font-mono opacity-70">{model.id}</span>
+                      </div>
+                      
+                      <button 
+                        onClick={() => handleDeleteModel(model.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-rose-400 hover:bg-rose-500/15 transition-all focus:outline-none focus:opacity-100"
+                        title="Remove Node Asset"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18"></path>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
 
-      {/* ===== Brand Footer ===== */}
-      <div className="flex items-center justify-center gap-2 py-3 border-t border-[var(--vscode-widget-border)]">
-        <span className="opacity-30">
-          <NeuralisBrandIcon />
-        </span>
-        <span className="text-[10px] opacity-30 font-medium tracking-wider">
-          Neuralis AI — Version 1.0.0
-        </span>
+        </div>
       </div>
     </div>
   );

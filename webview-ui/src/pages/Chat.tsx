@@ -6,17 +6,19 @@
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { SessionDetail, AiSettings, WebviewMessageSender } from '../contracts/webview.contracts';
+import { SessionDetail, AiSettings, WebviewMessageSender, RegisteredModel } from '../contracts/webview.contracts';
 import { useChat } from '../hooks/useChat';
 import UserBubble from '../components/Chat/UserBubble';
 import AiBubble from '../components/Chat/AiBubble';
 import ChatInput from '../components/Chat/ChatInput';
 import { ModelDropdown } from '../components/Chat/ModelDropdown';
 import { ErrorToast } from '../components/Chat/ErrorToast';
+import { ModeDropdown } from '../components/Chat/ModeDropdown';
 
 interface ChatProps {
   session: SessionDetail | null;
   aiSettings: AiSettings;
+  registeredModels: RegisteredModel[];
   isStreaming: boolean;
   streamContent: string;
   streamReasoning: string;
@@ -96,7 +98,9 @@ const ConversationFeed: React.FC<{
 
       {isStreaming && (
         <div className="self-start max-w-[98%] w-full animate-in fade-in duration-300">
-          {(streamReasoning || !streamContent) && <ReasoningBlock content={streamReasoning || 'Analyzing system architecture...'} defaultExpanded={true} />}
+          {streamReasoning && (
+            <ReasoningBlock content={streamReasoning} defaultExpanded={true} />
+          )}
           {streamContent ? (
             <div className="px-1 mt-2">
               <AiBubble streamContent={streamContent} isStreaming={true} />
@@ -167,7 +171,7 @@ const EmptyState: React.FC<{ onQuickPrompt: (prompt: string) => void }> = ({ onQ
   );
 };
 
-const Chat: React.FC<ChatProps> = ({ session, aiSettings, isStreaming, streamContent, streamReasoning, onSendMessage, onCancelStream, onNavigateToHistory, onNavigateToSettings, ipcSender, globalError, clearGlobalError }) => {
+const Chat: React.FC<ChatProps> = ({ session, aiSettings, registeredModels, isStreaming, streamContent, streamReasoning, onSendMessage, onCancelStream, onNavigateToHistory, onNavigateToSettings, ipcSender, globalError, clearGlobalError }) => {
   const chat = useChat({ session, isStreaming, streamContent, streamReasoning, ipcSender });
   const [internalInput, setInternalInput] = useState('');
 
@@ -260,9 +264,18 @@ const Chat: React.FC<ChatProps> = ({ session, aiSettings, isStreaming, streamCon
             <div className="flex items-center justify-center w-5 h-5 rounded-md bg-[var(--vscode-button-background)] text-[var(--vscode-button-foreground)] text-[9px] font-bold ml-1 shadow-sm select-none">
               AI
             </div>
-            <ModelDropdown aiSettings={aiSettings} ipcSender={ipcSender} />
+            <ModelDropdown 
+            aiSettings={aiSettings} 
+            registeredModels={registeredModels}
+            ipcSender={ipcSender} 
+            />
+            <div className="w-[1px] h-3.5 bg-[var(--vscode-panel-border)] mx-0.5 opacity-50" />
+            <ModeDropdown 
+                 aiSettings={aiSettings} 
+                 ipcSender={ipcSender} 
+               />
           </div>
-          
+
           <div className="flex items-center gap-0.5">
             {/* Tombol navigasi Anda */}
             {[
@@ -306,8 +319,9 @@ const Chat: React.FC<ChatProps> = ({ session, aiSettings, isStreaming, streamCon
         <div className="w-full max-w-2xl mx-auto rounded-[32px] shadow-[0_16px_50px_rgb(0,0,0,0.3)] border border-[var(--vscode-panel-border)]/80 bg-[var(--vscode-editor-background)]/95 backdrop-blur-3xl focus-within:border-[var(--vscode-focusBorder)] focus-within:ring-1 focus-within:ring-[var(--vscode-focusBorder)]/30 transition-all duration-300 pointer-events-auto">
           <ChatInput
             initialValue={internalInput}
-            onSendMessage={(msg, files) => { setInternalInput(''); onSendMessage(msg, files); }}
-            onCancelStream={onCancelStream}
+            onSendMessage={(prompt, files, isReasoningActive) => {
+              // 1. Buat salinan objek aiSettings agar tidak merusak state React global secara ilegal
+              const updatedSettings = {...aiSettings,proOption: isReasoningActive ? 'thinking' : 'fast'};ipcSender?.sendMessage(prompt, updatedSettings, files);}}
             isStreaming={isStreaming}
             attachedFiles={chat.attachedFiles}
             addFileToAttachment={chat.addFileToAttachment}

@@ -23,7 +23,11 @@ import {
   SessionMetadata,
   SessionDetail,
   Message,
+  RegisteredModel,
 } from '../contracts/message.contracts';
+import { ConfigManager } from '../services/configManager';
+import { SessionManager } from '../services/sessionManager';
+import { DeepseekClient } from '../services/deepseekClient';
 
 // ============================================================================
 // SERVICE STUBS / INTERFACES
@@ -59,6 +63,10 @@ interface IConfigManager {
   hasApiKey(): Promise<boolean>;
   /** Gets the API key if configured */
   getApiKey(): Promise<string | undefined>;
+
+  getModels(): RegisteredModel[];
+  addModel(model: RegisteredModel): Promise<void>;
+  deleteModel(modelId: string): Promise<void>;
 }
 
 /**
@@ -80,221 +88,7 @@ interface IDeepseekClient {
   isStreaming(): boolean;
 }
 
-// ============================================================================
-// SERVICE STUB IMPLEMENTATIONS
-// ============================================================================
 
-/**
- * Stub implementation of SessionManager for development purposes.
- * Should be replaced with the actual implementation.
- */
-class SessionManagerStub implements ISessionManager {
-  private sessions: Map<string, SessionDetail> = new Map();
-
-  async listSessions(): Promise<SessionMetadata[]> {
-    const metadata: SessionMetadata[] = [];
-    this.sessions.forEach((session) => {
-      metadata.push({
-        id: session.id,
-        title: session.title,
-        createdAt: session.createdAt,
-        lastModifiedAt: session.createdAt,
-      });
-    });
-    return metadata;
-  }
-
-  async loadSession(sessionId: string): Promise<SessionDetail | null> {
-    return this.sessions.get(sessionId) || null;
-  }
-
-  async createNewSession(initialTitle?: string): Promise<SessionDetail> {
-    const now = Date.now();
-    const session: SessionDetail = {
-      id: `session_${now}_${Math.random().toString(36).substr(2, 9)}`,
-      title: initialTitle || `New Session ${new Date(now).toLocaleString()}`,
-      messages: [],
-      createdAt: now,
-      settings: {
-        model: 'deepseek-v4-flash',
-        proOption: 'fast',
-        mode: 'chat',
-      },
-    };
-    this.sessions.set(session.id, session);
-    return session;
-  }
-
-  async deleteSession(sessionId: string): Promise<void> {
-    this.sessions.delete(sessionId);
-  }
-
-  async saveSession(session: SessionDetail): Promise<void> {
-    this.sessions.set(session.id, session);
-  }
-}
-
-/**
- * Stub implementation of ConfigManager for development purposes.
- * Should be replaced with the actual implementation using VS Code Configuration API.
- */
-class ConfigManagerStub implements IConfigManager {
-  private settings: AiSettings = {
-    model: 'deepseek-v4-flash',
-    proOption: 'fast',
-    mode: 'chat',
-  };
-  private apiKeyConfigured: boolean = false;
-
-  async load(): Promise<AiSettings> {
-    // In production, this would read from vscode.workspace.getConfiguration()
-    return { ...this.settings };
-  }
-
-  async save(settings: Partial<AiSettings>): Promise<void> {
-    // In production, this would write to vscode.workspace.getConfiguration().update()
-    Object.assign(this.settings, settings);
-  }
-
-  async hasApiKey(): Promise<boolean> {
-    // In production, this would check for API key in secret storage or configuration
-    return this.apiKeyConfigured;
-  }
-
-  async getApiKey(): Promise<string | undefined> {
-    // In production, this would retrieve from secret storage
-    return this.apiKeyConfigured ? 'stub-api-key' : undefined;
-  }
-
-  /**
-   * Sets the API key configured state (for testing)
-   */
-  setApiKeyConfigured(configured: boolean): void {
-    this.apiKeyConfigured = configured;
-  }
-}
-
-/**
- * Stub implementation of DeepseekClient for development purposes.
- * Should be replaced with the actual implementation using fetch/axios.
- */
-class DeepseekClientStub implements IDeepseekClient {
-  private abortController: AbortController | null = null;
-
-  async startStreaming(
-    prompt: string,
-    settings: AiSettings,
-    sessionId: string,
-    webview: vscode.Webview,
-    files?: ContextFile[]
-  ): Promise<Message> {
-    this.abortController = new AbortController();
-    const signal = this.abortController.signal;
-
-    // Send STREAM_START
-    webview.postMessage(
-      createExtensionEnvelope(ExtensionCommand.STREAM_START, {
-        sessionId,
-        model: settings.model,
-        mode: settings.mode,
-      })
-    );
-
-    try {
-      // Simulate streaming with chunks
-      const reasoningChunks = [
-        'Let me analyze this request step by step.',
-        'First, I need to understand the context.',
-        'The user is asking about: ' + prompt.substring(0, 50) + '...',
-        'Processing the information now.',
-      ];
-
-      const responseChunks = [
-        'I understand your question about ' + prompt.substring(0, 30) + '.\n\n',
-        'Here is my detailed response:\n\n',
-        'Based on the information provided, I can help you with this.\n\n',
-        '**Key Points:**\n',
-        '- This is a simulated response\n',
-        '- The actual implementation will call DeepSeek API\n',
-        '- Streaming support is fully integrated\n\n',
-        'The answer to your query involves multiple considerations.\n\n',
-        'Let me know if you need any clarification!',
-      ];
-
-      // Send reasoning chunks
-      for (const chunk of reasoningChunks) {
-        if (signal.aborted) {
-          throw new Error('Stream cancelled');
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-        webview.postMessage(
-          createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
-            reasoningContent: chunk + '\n',
-          })
-        );
-      }
-
-      // Send response chunks
-      let fullContent = '';
-      for (const chunk of responseChunks) {
-        if (signal.aborted) {
-          throw new Error('Stream cancelled');
-        }
-        await new Promise(resolve => setTimeout(resolve, 200));
-        fullContent += chunk;
-        webview.postMessage(
-          createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
-            content: chunk,
-          })
-        );
-      }
-
-      // Create final message
-      const finalMessage: Message = {
-        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        role: 'assistant',
-        content: fullContent,
-        thinkContent: reasoningChunks.join('\n'),
-        timestamp: Date.now(),
-      };
-
-      // Send STREAM_END
-      webview.postMessage(
-        createExtensionEnvelope(ExtensionCommand.STREAM_END, {
-          finalMessage,
-        })
-      );
-
-      return finalMessage;
-    } catch (error) {
-      if ((error as Error).message === 'Stream cancelled') {
-        console.log('[Neuralis] Stream cancelled by user');
-      } else {
-        throw error;
-      }
-      // Return a partial message if cancelled
-      return {
-        id: `msg_${Date.now()}_cancelled`,
-        role: 'assistant',
-        content: '[Stream cancelled]',
-        timestamp: Date.now(),
-      };
-    } finally {
-      this.abortController = null;
-    }
-  }
-
-  async abortActiveStream(): Promise<void> {
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-    }
-  }
-
-  isStreaming(): boolean {
-    return this.abortController !== null;
-  }
-}
 
 // ============================================================================
 // WORKSPACE UTILITY
@@ -407,13 +201,13 @@ export class MessageRouter {
    * @param deepseekClient - DeepSeek AI client service (defaults to stub)
    */
   constructor(
-    sessionManager?: ISessionManager,
-    configManager?: IConfigManager,
-    deepseekClient?: IDeepseekClient
+    sessionManager: SessionManager,
+    configManager: ConfigManager,
+    deepseekClient: DeepseekClient
   ) {
-    this.sessionManager = sessionManager || new SessionManagerStub();
-    this.configManager = configManager || new ConfigManagerStub();
-    this.deepseekClient = deepseekClient || new DeepseekClientStub();
+    this.sessionManager = sessionManager;
+    this.configManager = configManager;
+    this.deepseekClient = deepseekClient;
     this.workspaceUtility = WorkspaceUtility;
   }
 
@@ -499,7 +293,7 @@ export class MessageRouter {
 
       case WebviewCommand.SAVE_SETTINGS: {
         const { settings } = payload as WebviewCommandPayloadMap[typeof WebviewCommand.SAVE_SETTINGS];
-        await this.handleSaveSettings(settings);
+        await this.handleSaveSettings(settings, webview);
         break;
       }
 
@@ -522,6 +316,39 @@ export class MessageRouter {
       case WebviewCommand.READ_FILE_CONTEXT: {
         const { filePath } = payload as WebviewCommandPayloadMap[typeof WebviewCommand.READ_FILE_CONTEXT];
         await this.handleReadFileContext(filePath, webview);
+        break;
+      }
+
+      case WebviewCommand.REQUEST_MODEL_LIST: {
+        const models = this.configManager.getModels();
+        webview.postMessage(createExtensionEnvelope(
+          ExtensionCommand.SEND_MODEL_LIST, 
+          { models }
+        ));
+        break;
+      }
+
+      case WebviewCommand.ADD_MODEL: {
+        const { model } = payload as WebviewCommandPayloadMap[typeof WebviewCommand.ADD_MODEL];
+        await this.configManager.addModel(model);
+        
+        const models = this.configManager.getModels();
+        webview.postMessage(createExtensionEnvelope(
+          ExtensionCommand.SEND_MODEL_LIST, 
+          { models }
+        ));
+        break;
+      }
+
+      case WebviewCommand.DELETE_MODEL: {
+        const { modelId } = payload as WebviewCommandPayloadMap[typeof WebviewCommand.DELETE_MODEL];
+        await this.configManager.deleteModel(modelId);
+        
+        const models = this.configManager.getModels();
+        webview.postMessage(createExtensionEnvelope(
+          ExtensionCommand.SEND_MODEL_LIST, 
+          { models }
+        ));
         break;
       }
 
@@ -632,10 +459,21 @@ export class MessageRouter {
    * Persists the configuration to VS Code workspace settings.
    */
   private async handleSaveSettings(
-    settings: Partial<AiSettings>
+    settings: Partial<AiSettings>,
+    webview: vscode.Webview
   ): Promise<void> {
     await this.configManager.save(settings);
     console.log('[Neuralis] Settings saved successfully');
+
+    const updatedSettings = await this.configManager.load();
+    const hasApiKey = await this.configManager.hasApiKey();
+
+    webview.postMessage(
+      createExtensionEnvelope(ExtensionCommand.SEND_SETTINGS, {
+        settings: updatedSettings,
+        hasApiKey,
+      })
+    );
   }
 
   /**
@@ -647,19 +485,16 @@ export class MessageRouter {
     webview: vscode.Webview
   ): Promise<void> {
     const { prompt, files, settings } = payload;
+    if (!settings || !settings.model || settings.model.trim() === '') {
+      const error = new Error("No Engine Selected. Please select an AI model in the top-left dropdown.");
+      await this.handleError(error, 'Missing Model Configuration', webview);
+      return; 
+    }
 
     // Create or get current session
     const sessions = await this.sessionManager.listSessions();
-    let currentSession: SessionDetail | null = null;
-
-    if (sessions.length > 0) {
-      currentSession = await this.sessionManager.loadSession(sessions[0].id);
-    }
-
-    if (!currentSession) {
-      currentSession = await this.sessionManager.createNewSession();
-    }
-
+    let currentSession = sessions.length > 0 ? await this.sessionManager.loadSession(sessions[0].id) : null;
+    if (!currentSession) currentSession = await this.sessionManager.createNewSession();
     // Add user message to session
     const userMessage: Message = {
       id: `msg_${Date.now()}_user`,
@@ -673,19 +508,11 @@ export class MessageRouter {
     await this.sessionManager.saveSession(currentSession);
 
     // Start streaming response
-    await this.deepseekClient.startStreaming(
-      prompt,
-      settings,
-      currentSession.id,
-      webview,
-      files
-    );
+    await this.deepseekClient.startStreaming(prompt, settings, currentSession!.id, webview, files);
 
     // Reload session to get the final state
-    const updatedSession = await this.sessionManager.loadSession(currentSession.id);
-    if (updatedSession) {
-      await this.sessionManager.saveSession(updatedSession);
-    }
+    const updatedSession = await this.sessionManager.loadSession(currentSession!.id);
+    if (updatedSession) await this.sessionManager.saveSession(updatedSession);
   }
 
   /**

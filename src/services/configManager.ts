@@ -23,6 +23,7 @@ import {
   AiModel,
   ProOption,
   AiMode,
+  RegisteredModel,
 } from '../contracts/message.contracts';
 
 // ============================================================================
@@ -34,6 +35,15 @@ const CONFIG_SECTION = 'neuralis';
 
 /** Secret storage key for DeepSeek API key */
 const API_KEY_SECRET_ID = 'neuralis.deepseek.apiKey';
+
+/** Global state key for registered models */
+const MODELS_STATE_KEY = 'neuralis.registered_models';
+
+/** Default models if registry is empty */
+const DEFAULT_MODELS: RegisteredModel[] = [
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }
+];
 
 /** Default values for AI settings matching contract specifications */
 const DEFAULT_SETTINGS: AiSettings = {
@@ -69,6 +79,19 @@ export interface IConfigManager {
   
   /** Gets the API key from secret storage if configured */
   getApiKey(): Promise<string | undefined>;
+
+  /** Gets the API key from secret storage if configured */
+  getApiKey(): Promise<string | undefined>;
+
+  // --- TAMBAHKAN DARI SINI ---
+  /** Gets all registered AI models from global state */
+  getModels(): RegisteredModel[];
+  
+  /** Adds a new custom model to the registry */
+  addModel(model: RegisteredModel): Promise<void>;
+  
+  /** Deletes a model from the registry by its ID */
+  deleteModel(modelId: string): Promise<void>;
 }
 
 // ============================================================================
@@ -90,6 +113,26 @@ export class ConfigManager implements IConfigManager {
    */
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
+  }
+
+  public getModels(): RegisteredModel[] {
+    return this.context.globalState.get<RegisteredModel[]>(MODELS_STATE_KEY, DEFAULT_MODELS);
+  }
+
+  public async addModel(model: RegisteredModel): Promise<void> {
+    const models = this.getModels();
+    if (!models.find(m => m.id === model.id)) {
+      models.push(model);
+      await this.context.globalState.update(MODELS_STATE_KEY, models);
+      console.log(`[ConfigManager] Added new model asset: ${model.id}`);
+    }
+  }
+
+  public async deleteModel(modelId: string): Promise<void> {
+    let models = this.getModels();
+    models = models.filter(m => m.id !== modelId);
+    await this.context.globalState.update(MODELS_STATE_KEY, models);
+    console.log(`[ConfigManager] Removed model asset: ${modelId}`);
   }
 
   // ==========================================================================
@@ -228,6 +271,8 @@ export class ConfigManager implements IConfigManager {
         // Ignore if key doesn't exist
       }
 
+      await this.context.globalState.update(MODELS_STATE_KEY, undefined);
+
       // Reset configuration settings to defaults
       const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
       
@@ -258,9 +303,8 @@ export class ConfigManager implements IConfigManager {
    */
   private readModelSetting(config: vscode.WorkspaceConfiguration): AiModel {
     const value = config.get<string>('model');
-    const validModels: AiModel[] = ['deepseek-v4-flash', 'deepseek-v4-pro'];
     
-    if (value && validModels.includes(value as AiModel)) {
+    if (typeof value === 'string' && value.trim().length > 0) {
       return value as AiModel;
     }
     
@@ -356,22 +400,19 @@ export class ConfigManager implements IConfigManager {
   private validateSettingValue(key: string, value: any): any {
     switch (key) {
       case 'model': {
-        const validModels: AiModel[] = ['deepseek-v4-flash', 'deepseek-v4-pro'];
-        return validModels.includes(value as AiModel) ? value : undefined;
+        return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
       }
       
       case 'proOption': {
-        const validOptions: ProOption[] = ['fast', 'thinking'];
-        return validOptions.includes(value as ProOption) ? value : undefined;
+        return ['fast', 'thinking'].includes(value) ? value : 'fast';
       }
       
       case 'mode': {
-        const validModes: AiMode[] = ['chat', 'planning', 'agent', 'coder'];
-        return validModes.includes(value as AiMode) ? value : undefined;
+        return ['chat', 'coder', 'planning', 'agent'].includes(value) ? value : 'chat';
       }
       
       default:
-        return value;
+        throw new Error(`Invalid configuration key: ${key}`);
     }
   }
 

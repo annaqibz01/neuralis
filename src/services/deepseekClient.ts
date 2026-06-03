@@ -147,6 +147,8 @@ export class DeepseekClient implements IDeepseekClient {
   private isStreamActive: boolean = false;
   private accumulatedContent: string = '';
   private accumulatedReasoning: string = '';
+  private isInsideThinkTag: boolean = false;
+  private isThinkingEnabled: boolean = false;
 
   /**
    * Creates a new DeepseekClient instance.
@@ -183,6 +185,8 @@ export class DeepseekClient implements IDeepseekClient {
     // Reset accumulated content
     this.accumulatedContent = '';
     this.accumulatedReasoning = '';
+    this.isInsideThinkTag = false;
+    this.isThinkingEnabled = settings.proOption === 'thinking';
 
     // Validate API key
     const apiKey = await this.configManager.getApiKey();
@@ -532,13 +536,18 @@ export class DeepseekClient implements IDeepseekClient {
 
       // Extract reasoning content (DeepSeek-specific field)
       const reasoningContent = delta.reasoning_content || delta.thinking;
-      if (reasoningContent) {
+      
+      // 🎯 FIX FATAL DI SINI: Hanya loloskan token reasoning jika saklar isThinkingEnabled bernilai TRUE!
+      if (reasoningContent && reasoningContent.trim() !== '') {
         this.accumulatedReasoning += reasoningContent;
-        webview.postMessage(
-          createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
-            reasoningContent: reasoningContent,
-          })
-        );
+        
+        if (this.isThinkingEnabled) {
+          webview.postMessage(
+            createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
+              reasoningContent: reasoningContent,
+            })
+          );
+        }
       }
 
       // Extract regular content
