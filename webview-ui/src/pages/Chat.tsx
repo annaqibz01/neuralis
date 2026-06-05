@@ -5,7 +5,7 @@
  * absolute positioning layers, and integrated custom ModelDropdown.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { SessionDetail, AiSettings, WebviewMessageSender, RegisteredModel } from '../contracts/webview.contracts';
 import { useChat } from '../hooks/useChat';
 import UserBubble from '../components/Chat/UserBubble';
@@ -22,7 +22,7 @@ interface ChatProps {
   isStreaming: boolean;
   streamContent: string;
   streamReasoning: string;
-  onSendMessage: (prompt: string, files?: any[]) => void;
+  onSendMessage: (prompt: string, files?: any[], isReasoningActive?: boolean) => void;
   onCancelStream: () => void;
   onNavigateToHistory: () => void;
   onNavigateToSettings: () => void;
@@ -175,6 +175,19 @@ const Chat: React.FC<ChatProps> = ({ session, aiSettings, registeredModels, isSt
   const chat = useChat({ session, isStreaming, streamContent, streamReasoning, ipcSender });
   const [internalInput, setInternalInput] = useState('');
 
+  useEffect(() => {
+    if (session?.id) {
+      setInternalInput(''); // 📄 KOSONGKAN teks input utama di UI seketika
+      
+      // Sinkronisasikan ulang ke textarea jika sudah terlanjur dirender di layar
+      const textarea = document.querySelector('textarea');
+      if (textarea) {
+        textarea.value = '';
+        textarea.style.height = 'auto'; // Reset tinggi textarea agar tidak melar
+      }
+    }
+  }, [session?.id]);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const hasMessages = session?.messages && session.messages.length > 0;
   const showAmbientBackground = !hasMessages && !isStreaming;
@@ -319,9 +332,7 @@ const Chat: React.FC<ChatProps> = ({ session, aiSettings, registeredModels, isSt
         <div className="w-full max-w-2xl mx-auto rounded-[32px] shadow-[0_16px_50px_rgb(0,0,0,0.3)] border border-[var(--vscode-panel-border)]/80 bg-[var(--vscode-editor-background)]/95 backdrop-blur-3xl focus-within:border-[var(--vscode-focusBorder)] focus-within:ring-1 focus-within:ring-[var(--vscode-focusBorder)]/30 transition-all duration-300 pointer-events-auto">
           <ChatInput
             initialValue={internalInput}
-            onSendMessage={(prompt, files, isReasoningActive) => {
-              // 1. Buat salinan objek aiSettings agar tidak merusak state React global secara ilegal
-              const updatedSettings = {...aiSettings,proOption: isReasoningActive ? 'thinking' : 'fast'};ipcSender?.sendMessage(prompt, updatedSettings, files);}}
+            onSendMessage={(prompt, files, isReasoningActive) => {onSendMessage(prompt, files, isReasoningActive);}}
             isStreaming={isStreaming}
             attachedFiles={chat.attachedFiles}
             addFileToAttachment={chat.addFileToAttachment}

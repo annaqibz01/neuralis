@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 interface Session {
   id: string;
@@ -10,89 +10,83 @@ interface Session {
 }
 
 interface HistoryProps {
-  onBack: () => void;
-  onSessionSelect: (sessionId: string) => void;
+  sessions: any[]; // Terima data list session terupdate langsung dari App.tsx
+  currentSessionId?: string;
+  onSelectSession: (sessionId: string) => void;
+  onCreateNewSession: () => void;
   onDeleteSession: (sessionId: string) => void;
+  onNavigateToChat: () => void;
+  onNavigateToSettings: () => void;
+  ipcSender: any;
 }
 
-const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSession }) => {
-  const [sessions, setSessions] = useState<Session[]>([]);
+const History: React.FC<HistoryProps> = ({ 
+  sessions: backendSessions, 
+  onNavigateToChat, 
+  onSelectSession, 
+  onDeleteSession 
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredSessions, setFilteredSessions] = useState<Session[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Sample data - replace with actual session store
+  // Murni memetakan data dari backend session list yang dikirim oleh App.tsx
   useEffect(() => {
-    const savedData = localStorage.getItem('neuralis_sessions');
-    if (savedData) {
-      const parsedSessions = JSON.parse(savedData);
-      const formattedSessions: Session[] = parsedSessions.map((s: any) => {
-        let modeIcon = '💬 Chat';
-        if (s.aiMode === 'coder') modeIcon = '💻 Coder';
-        if (s.aiMode === 'planning') modeIcon = '🧠 Plan';
-        if (s.aiMode === 'agent') modeIcon = '🤖 Agent';
-        const diffMs = Date.now() - (s.createdAt || Date.now());
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const formattedSessions: Session[] = (backendSessions || []).map((s: any) => {
+      let modeIcon = '💬 Chat';
+      if (s.aiMode === 'coder') modeIcon = '💻 Coder';
+      if (s.aiMode === 'planning') modeIcon = '🧠 Plan';
+      if (s.aiMode === 'agent') modeIcon = '🤖 Agent';
+      
+      const diffMs = Date.now() - (s.createdAt || Date.now());
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-        let dateGroup = 'Older';
-        let relativeTime = 'Long ago';
-        
-        if (diffDays === 0) {
-          dateGroup = 'Today';
-          relativeTime = 'Today';
-        } else if (diffDays === 1) {
-          dateGroup = 'Yesterday';
-          relativeTime = 'Yesterday';
-        } else {
-          relativeTime = `${diffDays} days ago`;
-        }
+      let dateGroup = 'Older';
+      let relativeTime = 'Long ago';
+      
+      if (diffDays === 0) {
+        dateGroup = 'Today';
+        relativeTime = 'Today';
+      } else if (diffDays === 1) {
+        dateGroup = 'Yesterday';
+        relativeTime = 'Yesterday';
+      } else {
+        relativeTime = `${diffDays} days ago`;
+      }
 
-        return {
-          id: s.id,
-          title: s.title || 'Untitled Session',
-          timestamp: new Date(s.createdAt || Date.now()).toISOString(),
-          relativeTime: relativeTime,
-          aiMode: modeIcon,
-          dateGroup: dateGroup
-        };
-      });
-      setSessions(formattedSessions);
-      filterSessions(formattedSessions, searchQuery);
+      return {
+        id: s.id,
+        title: s.title || 'Untitled Session',
+        timestamp: new Date(s.createdAt || Date.now()).toISOString(),
+        relativeTime: relativeTime,
+        aiMode: modeIcon,
+        dateGroup: dateGroup
+      };
+    });
+
+    // Jalankan filter pencarian
+    if (!searchQuery.trim()) {
+      setFilteredSessions(formattedSessions);
     } else {
-      setSessions([]);
-      setFilteredSessions([]);
+      const lowerQuery = searchQuery.toLowerCase();
+      setFilteredSessions(
+        formattedSessions.filter(session =>
+          session.title.toLowerCase().includes(lowerQuery)
+        )
+      );
     }
-  }, [searchQuery]);
-  // Filter sessions based on search query
-  const filterSessions = (sessionsList: Session[], query: string) => {
-    if (!query.trim()) {
-      setFilteredSessions(sessionsList);
-      return;
-    }
-    const lowerQuery = query.toLowerCase();
-    setFilteredSessions(
-      sessionsList.filter(session =>
-        session.title.toLowerCase().includes(lowerQuery)
-      )
-    );
-  };
+  }, [backendSessions, searchQuery]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    filterSessions(sessions, query);
+    setSearchQuery(e.target.value);
   };
 
   const handleDelete = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    const updatedSessions = sessions.filter(s => s.id !== sessionId);
-    setSessions(updatedSessions);
-    filterSessions(updatedSessions, searchQuery);
-    onDeleteSession(sessionId);
+    onDeleteSession(sessionId); // Delegasikan langsung ke App.tsx untuk diteruskan ke IPC Backend
   };
 
-  // Group sessions by date categories
-  const groupedSessions = React.useMemo(() => {
+  const groupedSessions = useMemo(() => {
     const groups: { [key: string]: Session[] } = {};
     filteredSessions.forEach(session => {
       if (!groups[session.dateGroup]) {
@@ -110,16 +104,16 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
       {/* Top Navigation Bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--vscode-widget-border)]">
         <button
-          onClick={onBack}
-          className="p-1.5 rounded-md hover:bg-[var(--vscode-list-hoverBackground)] transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-[var(--vscode-button-background)]/30"
-          title="Back"
+          onClick={onNavigateToChat}
+          className="p-1.5 rounded-md hover:bg-[var(--vscode-list-hoverBackground)] transition-colors duration-150 focus:outline-none"
+          title="Back to Chat"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4L5 9L11 14" />
           </svg>
         </button>
         <h1 className="text-base font-semibold tracking-tight">Chat History</h1>
-        <span className="text-xs opacity-40 ml-auto">{sessions.length} sessions</span>
+        <span className="text-xs opacity-40 ml-auto">{backendSessions?.length || 0} sessions</span>
       </div>
 
       {/* Search Bar */}
@@ -149,10 +143,7 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
           />
           {searchQuery && (
             <button
-              onClick={() => {
-                setSearchQuery('');
-                filterSessions(sessions, '');
-              }}
+              onClick={() => setSearchQuery('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-70 transition-opacity"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -172,37 +163,23 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
               <line x1="10" y1="9" x2="14" y2="9" />
             </svg>
             <p className="text-sm">{searchQuery ? 'No sessions match your search' : 'No chat history yet'}</p>
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  filterSessions(sessions, '');
-                }}
-                className="mt-2 text-xs text-[var(--vscode-button-background)] hover:underline"
-              >
-                Clear search
-              </button>
-            )}
           </div>
         ) : (
           dateGroupOrder.map(group => {
             if (!groupedSessions[group]) return null;
             return (
               <div key={group}>
-                {/* Date Group Header */}
                 <h3 className="text-xs font-semibold uppercase tracking-wider opacity-40 mb-2 px-1">
                   {group}
                 </h3>
-                {/* Session Cards */}
                 <div className="space-y-1">
                   {groupedSessions[group].map((session) => (
                     <button
                       key={session.id}
-                      onClick={() => onSessionSelect(session.id)}
+                      onClick={() => onSelectSession(session.id)} // Menggunakan fungsi select session bawaan App.tsx
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 ease-in-out hover:bg-[var(--vscode-list-hoverBackground)] active:bg-[var(--vscode-list-activeSelectionBackground)] group relative text-left"
                       style={{ color: 'var(--vscode-foreground)' }}
                     >
-                      {/* Chat Icon */}
                       <span className="flex-shrink-0 opacity-40 group-hover:opacity-60 transition-opacity">
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                           <path d="M2 2H14V11H4L2 13V2Z" stroke="currentColor" strokeWidth="1.2" fill="none" />
@@ -212,7 +189,6 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
                         </svg>
                       </span>
 
-                      {/* Session Info */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm truncate">{session.title}</p>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -222,7 +198,6 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
                         </div>
                       </div>
 
-                      {/* Delete Button (visible on hover) */}
                       <button
                         onClick={(e) => handleDelete(e, session.id)}
                         className="flex-shrink-0 p-1.5 rounded-md opacity-0 group-hover:opacity-40 hover:opacity-100 hover:bg-red-500/10 hover:text-red-400 transition-all duration-150"
@@ -236,17 +211,6 @@ const History: React.FC<HistoryProps> = ({ onBack, onSessionSelect, onDeleteSess
                           <line x1="8.5" y1="6" x2="8.5" y2="9" />
                         </svg>
                       </button>
-
-                      {/* Arrow indicator */}
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        className="flex-shrink-0 opacity-0 group-hover:opacity-40 transition-opacity ml-1"
-                      >
-                        <path d="M4 2L8 6L4 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
                     </button>
                   ))}
                 </div>

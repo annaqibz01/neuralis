@@ -76,7 +76,7 @@ interface IConfigManager {
 interface IDeepseekClient {
   /** Starts a streaming request to the AI */
   startStreaming(
-    prompt: string,
+    sessionMessages: Message[],
     settings: AiSettings,
     sessionId: string,
     webview: vscode.Webview,
@@ -151,18 +151,20 @@ class WorkspaceUtility {
     }
 
     try {
-      // Resolve the full URI from the relative path
       const workspaceUri = vscode.workspace.workspaceFolders[0].uri;
       const fileUri = vscode.Uri.joinPath(workspaceUri, filePath);
 
-      // Check if file exists
-      try {
-        await vscode.workspace.fs.stat(fileUri);
-      } catch {
-        return null;
+      // Cek stat file untuk mengonfirmasi keberadaan dan ukurannya
+      const fileStat = await vscode.workspace.fs.stat(fileUri);
+      
+      // Batasi ukuran file: 2 * 1024 * 1024 byte = 2MB
+      const MAX_FILE_SIZE = 2 * 1024 * 1024;
+      if (fileStat.size > MAX_FILE_SIZE) {
+        console.warn(`[Neuralis] Membatalkan pembacaan file ${filePath} karena terlalu besar (${(fileStat.size / 1024 / 1024).toFixed(2)} MB)`);
+        return null; // Blokir pembacaan file OOM
       }
 
-      // Read file content
+      // Read file content aman
       const contentBuffer = await vscode.workspace.fs.readFile(fileUri);
       const content = Buffer.from(contentBuffer).toString('utf-8');
 
@@ -381,7 +383,17 @@ export class MessageRouter {
       })
     );
 
-    // Automatically request session list after initialization
+    // ✨ POTONGAN KODE PERBAIKAN: Paksa buat sesi baru yang bersih setiap kali startup / refresh
+    const newSession = await this.sessionManager.createNewSession();
+    
+    // Kirim detail sesi kosong ini ke Frontend React agar langsung memicu Empty State
+    webview.postMessage(
+      createExtensionEnvelope(ExtensionCommand.SEND_SESSION_DETAIL, {
+        session: newSession,
+      })
+    );
+
+    // Automatically request session list setelah initialization agar sidebar riwayat sinkron
     await this.handleRequestSessionList(webview);
   }
 
@@ -485,9 +497,15 @@ export class MessageRouter {
     webview: vscode.Webview
   ): Promise<void> {
     const { prompt, files, settings } = payload;
-    if (!settings || !settings.model || settings.model.trim() === '') {
-      const error = new Error("No Engine Selected. Please select an AI model in the top-left dropdown.");
-      await this.handleError(error, 'Missing Model Configuration', webview);
+
+    console.log('[DEBUG SETTINGS FRONTEND]', JSON.stringify(settings, null, 2));
+
+    const availableModels = this.configManager.getModels();
+    const isModelValid = availableModels.some(m => m.id === settings?.model);
+
+    if (!settings || !settings.model || settings.model.trim() === '' || !isModelValid) {
+      const error = new Error("Engine terputus. Silakan registrasi ulang AI Model di menu Settings.");
+      await this.handleError(error, 'Invalid Model Configuration', webview);
       return; 
     }
 
@@ -495,7 +513,7 @@ export class MessageRouter {
     const sessions = await this.sessionManager.listSessions();
     let currentSession = sessions.length > 0 ? await this.sessionManager.loadSession(sessions[0].id) : null;
     if (!currentSession) currentSession = await this.sessionManager.createNewSession();
-    // Add user message to session
+    
     const userMessage: Message = {
       id: `msg_${Date.now()}_user`,
       role: 'user',
@@ -504,17 +522,39 @@ export class MessageRouter {
       timestamp: Date.now(),
     };
 
+    // 📄 A. Masukkan pesan user ke database sesi dan simpan ke disk
     currentSession.messages.push(userMessage);
     await this.sessionManager.saveSession(currentSession);
 
-    // Start streaming response
-    await this.deepseekClient.startStreaming(prompt, settings, currentSession!.id, webview, files);
+    // 🚀 B. KIRIM SEGERA ke frontend agar balon chat user muncul instan & empty state MATI PERMANEN
+    webview.postMessage(
+      createExtensionEnvelope(ExtensionCommand.SEND_SESSION_DETAIL, {
+        session: currentSession,
+      })
+    );
 
-    // Reload session to get the final state
-    const updatedSession = await this.sessionManager.loadSession(currentSession!.id);
-    if (updatedSession) await this.sessionManager.saveSession(updatedSession);
+    try {
+      // 🔄 C. Jalankan proses streaming tokens dari DeepSeek API
+      const finalAiMessage = await this.deepseekClient.startStreaming(currentSession.messages, settings, currentSession.id, webview, files);
+
+      // 💾 D. Ambil state berkas paling mutakhir dari disk setelah streaming selesai
+      const updatedSession = await this.sessionManager.loadSession(currentSession.id);
+      if (updatedSession) {
+        // Gabungkan pesan AI ke dalam riwayat berkas, lalu kunci/simpan ke disk
+        updatedSession.messages.push(finalAiMessage);
+        await this.sessionManager.saveSession(updatedSession);
+      }
+
+      // 🏁 E. SINYAL FINAL: Beritahu frontend untuk matikan isStreaming HANYA SETELAH file sukses aman di disk!
+      webview.postMessage(
+        createExtensionEnvelope(ExtensionCommand.STREAM_END, {
+          finalMessage: finalAiMessage,
+        })
+      );
+    } catch (streamError) {
+      console.error('[MessageRouter] Error during AI stream execution:', streamError);
+    }
   }
-
   /**
    * Handles the CANCEL_STREAM command.
    * Aborts the active streaming request.

@@ -24,37 +24,6 @@
   "main": "./out/utils/extension.js",
   "activationEvents": [],
   "contributes": {
-    "configuration": {
-      "title": "Neuralis Settings",
-      "properties": {
-        "neuralis.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Enter your official DeepSeek API key."
-        },
-        "neuralis.model": {
-          "type": "string",
-          "enum": [
-            "deepseek-chat",
-            "deepseek-reasoning"
-          ],
-          "default": "deepseek-chat",
-          "description": "Select the target model: deepseek-chat (v4 Flash) or deepseek-reasoning (Pro)."
-        },
-        "neuralis.proOption": {
-          "type": "string",
-          "enum": ["fast", "thinking"],
-          "default": "fast",
-          "description": "Processing speed and depth preference for the AI assistant."
-        },
-        "neuralis.mode": {
-          "type": "string",
-          "enum": ["chat", "coder", "planning", "agent"],
-          "default": "chat",
-          "description": "The dynamic agent persona mode injected for AI completions."
-        }
-      }
-    },
     "viewsContainers": {
       "activitybar": [
         {

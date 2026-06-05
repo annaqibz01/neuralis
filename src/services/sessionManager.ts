@@ -116,7 +116,50 @@ export class SessionManager implements ISessionManager {
   private generateSessionId(): string {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 10);
-    return `session_${timestamp}_${random}`;
+    return `${SESSION_FILE_PREFIX}${timestamp}_${random}`;
+  }
+
+  // 2. Terapkan looping validasi di dalam createNewSession
+  public async createNewSession(initialTitle?: string): Promise<SessionDetail> {
+    await this.ensureDirectory();
+
+    const now = Date.now();
+    let sessionId = '';
+    let fileUri: vscode.Uri | null = null;
+    let isCollision = true;
+    let attempts = 0;
+
+    // Loop pencegah tabrakan ID file menggunakan MAX_ID_RETRIES
+    while (isCollision && attempts < 5) {
+      sessionId = this.generateSessionId();
+      fileUri = this.getSessionFileUri(sessionId);
+      
+      try {
+        // Cek apakah file sudah eksis di disk
+        await vscode.workspace.fs.stat(fileUri);
+        attempts++; // Jika eksis, berarti tabrakan terjadi, lakukan acak ulang
+      } catch {
+        isCollision = false; // Jika memicu error (FileNotFound), berarti ID ini AMAN digunakan
+      }
+    }
+
+    const title = initialTitle || `Chat Session ${new Date(now).toLocaleString()}`;
+
+    const session: SessionDetail = {
+      id: sessionId,
+      title: title,
+      messages: [],
+      createdAt: now,
+      settings: {
+        model: 'deepseek-v4-flash',
+        proOption: 'fast',
+        mode: 'chat',
+      },
+    };
+
+    await this.saveSession(session);
+    console.log(`[SessionManager] Created secure new session: ${sessionId}`);
+    return session;
   }
 
   /**
@@ -127,7 +170,7 @@ export class SessionManager implements ISessionManager {
    * @returns Sanitized filename
    */
   private sanitizeFilename(filename: string): string {
-    return filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+    return filename.replace(/[^a-zA-Z0-9_\-]/g, '_');
   }
 
   /**
@@ -288,31 +331,6 @@ export class SessionManager implements ISessionManager {
    * @param initialTitle - Optional title for the session
    * @returns The newly created SessionDetail
    */
-  public async createNewSession(initialTitle?: string): Promise<SessionDetail> {
-    await this.ensureDirectory();
-
-    const now = Date.now();
-    const sessionId = this.generateSessionId();
-    const title = initialTitle || `Chat Session ${new Date(now).toLocaleString()}`;
-
-    const session: SessionDetail = {
-      id: sessionId,
-      title: title,
-      messages: [],
-      createdAt: now,
-      settings: {
-        model: 'deepseek-v4-flash',
-        proOption: 'fast',
-        mode: 'chat',
-      },
-    };
-
-    // Save the new session to disk
-    await this.saveSession(session);
-
-    console.log(`[SessionManager] Created new session: ${sessionId}`);
-    return session;
-  }
 
   /**
    * Deletes a session by its ID.

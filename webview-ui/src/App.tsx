@@ -88,15 +88,19 @@ const App: React.FC = () => {
         ipcManagerRef.current = ipcManager;
 
         ipcManager.receiver.on(
-          ExtensionCommand.SEND_SETTINGS,
-          (payload: { settings: AiSettings; hasApiKey: boolean }) => {
+          ExtensionCommand.SEND_SESSION_DETAIL,
+          (payload: { session: SessionDetail }) => {
             if (!isMounted) return;
-            updateState({
-              aiSettings: {
-                ...payload.settings,
-                apiKey: payload.hasApiKey ? payload.settings.apiKey : undefined,
-              },
-            });
+            
+            // ✅ KONSOLIDASI: Gabungkan semua mutasi menjadi satu objek tunggal agar render berjalan Atomic
+            setState(prev => ({
+              ...prev,
+              streamContent: '',
+              streamReasoning: '',
+              currentSession: payload.session,
+              currentPage: 'chat',
+              error: null,
+            }));
           }
         );
 
@@ -238,7 +242,7 @@ const App: React.FC = () => {
             streamReasoning={state.streamReasoning}
             globalError={state.error}
             clearGlobalError={dismissError}
-            onSendMessage={(prompt, files) => sender.sendMessage(prompt, state.aiSettings, files)}
+            onSendMessage={(prompt, files, isReasoningActive) => {const updatedSettings = {...state.aiSettings,proOption: (isReasoningActive ? 'thinking' : 'fast') as 'fast' | 'thinking'};sender.sendMessage(prompt, updatedSettings, files);}}
             onCancelStream={() => sender.cancelStream()}
             onNavigateToHistory={() => navigateTo('history')}
             onNavigateToSettings={() => navigateTo('settings')}

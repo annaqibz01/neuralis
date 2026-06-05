@@ -38,8 +38,7 @@ const VIEW_TYPE = 'neuralis.sidebar';
 /** Content Security Policy source directives */
 const CSP_SOURCES = {
   scripts: [
-    "'unsafe-inline'",
-    "'unsafe-eval'",
+    "'unsafe-inline'", // Hilangkan "'unsafe-eval'" dari array ini
     'https://*.vscode-cdn.net',
     'https://*.vscode-resource.vscode-cdn.net',
   ],

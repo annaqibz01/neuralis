@@ -111,8 +111,22 @@ export const Settings: React.FC<SettingsProps> = ({
   }, [apiKey, modelId, modelName, aiSettings.model, onSaveSettings, ipcSender]);
 
   const handleDeleteModel = (idToDelete: string) => {
+    // 1. Kirim perintah hapus model ke backend
     ipcSender.send(WebviewCommand.DELETE_MODEL, { modelId: idToDelete });
-  };
+    
+    // 2. Cek apakah ini adalah model terakhir yang tersisa di daftar
+    const isLastModel = registeredModels.length === 1 && registeredModels[0].id === idToDelete;
+
+    if (isLastModel) {
+      // 💥 PEMUSNAHAN MASSAL: Kosongkan model aktif DAN hapus API Key dari brankas OS!
+      onSaveSettings({ model: '', apiKey: '' });
+      setApiKey(''); // Kosongkan state UI seketika agar inputan teks langsung bersih
+    } else if (aiSettings.model === idToDelete) {
+      // Jika bukan model terakhir, tapi kebetulan model yang dihapus ini sedang dipakai, cukup putuskan koneksinya
+      onSaveSettings({ model: '' });
+    }
+
+};
 
   return (
     <div className="flex flex-col h-full bg-[var(--vscode-sideBar-background)] text-[var(--vscode-foreground)] overflow-hidden">

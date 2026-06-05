@@ -70,7 +70,7 @@ type AbortControllerType = AbortController;
 export interface IDeepseekClient {
   /** Starts a streaming request to the AI */
   startStreaming(
-    prompt: string,
+    sessionMessages: Message[],
     settings: AiSettings,
     sessionId: string,
     webview: vscode.Webview,
@@ -176,42 +176,38 @@ export class DeepseekClient implements IDeepseekClient {
    * @returns The final Message object after stream completion
    */
   public async startStreaming(
-    prompt: string,
+    sessionMessages: Message[],
     settings: AiSettings,
     sessionId: string,
     webview: vscode.Webview,
     files?: ContextFile[]
   ): Promise<Message> {
-    // Reset accumulated content
+    // 🎯 KUNCI SINKRONISASI UTAMA: Update state internal sebelum request payload dirakit!
+    // Jika proOption dari frontend adalah 'thinking' maka true, jika 'fast' maka false.
+    this.isThinkingEnabled = settings.proOption === 'thinking';
+    
+    this.isStreamActive = true;
     this.accumulatedContent = '';
     this.accumulatedReasoning = '';
-    this.isInsideThinkTag = false;
-    this.isThinkingEnabled = settings.proOption === 'thinking';
-
-    // Validate API key
-    const apiKey = await this.configManager.getApiKey();
-    if (!apiKey) {
-      const error = new Error('DeepSeek API key is not configured. Please set your API key in extension settings.');
-      await this.sendErrorToWebview(error, webview);
-      throw error;
-    }
-
-    // Create abort controller for this request
     this.abortController = new AbortController();
-    this.isStreamActive = true;
 
-    // Send stream start signal
+    // Notify webview that stream has started
     webview.postMessage(
       createExtensionEnvelope(ExtensionCommand.STREAM_START, {
-        sessionId,
+        sessionId: sessionId,
         model: settings.model,
-        mode: settings.mode,
+        mode: settings.mode, // Pastikan tipe data settings.mode sesuai (misal: 'chat', 'coder', dll)
       })
     );
 
+    const apiKey = await this.configManager.getApiKey();
+    if (!apiKey) {
+      throw new Error('API Key tidak ditemukan. Silakan periksa kembali konfigurasi ekstensi Anda.');
+    }
+
     try {
       // Prepare the request payload
-      const requestBody = this.buildRequestBody(prompt, settings, files);
+      const requestBody = this.buildRequestBody(sessionMessages, settings, files);
       
       // Execute the streaming request with retry logic
       const finalMessage = await this.executeStreamingRequest(
@@ -280,13 +276,13 @@ export class DeepseekClient implements IDeepseekClient {
    * @returns The complete request body object
    */
   private buildRequestBody(
-    prompt: string,
+    sessionMessages: Message[],
     settings: AiSettings,
     files?: ContextFile[]
   ): Record<string, any> {
     const messages: Array<Record<string, any>> = [];
 
-    // Add system message based on mode
+    // 1. Tambahkan system message di awal array sesuai mode yang dipilih
     const systemMessage = this.buildSystemMessage(settings.mode);
     if (systemMessage) {
       messages.push({
@@ -295,34 +291,44 @@ export class DeepseekClient implements IDeepseekClient {
       });
     }
 
-    // Add file context if provided
-    if (files && files.length > 0) {
-      const fileContext = this.buildFileContextMessage(files);
-      messages.push({
-        role: 'user',
-        content: fileContext,
-      });
-    }
-
-    // Add the actual user prompt
-    messages.push({
-      role: 'user',
-      content: prompt,
+    // 2. Petakan seluruh riwayat pesan dari frontend ke format API DeepSeek
+    (sessionMessages || []).forEach((msg, index) => {
+      if (msg.role === 'user') {
+        // Jika ini adalah pesan user paling terakhir (pesan aktif saat ini) dan ada file context,
+        // selipkan informasi file tepat di atas teks prompt user tersebut.
+        if (index === sessionMessages.length - 1 && files && files.length > 0) {
+          const fileContext = this.buildFileContextMessage(files);
+          messages.push({
+            role: 'user',
+            content: `${fileContext}\n\n${msg.content}`,
+          });
+        } else {
+          messages.push({
+            role: 'user',
+            content: msg.content,
+          });
+        }
+      } else if (msg.role === 'assistant') {
+        messages.push({
+          role: 'assistant',
+          content: msg.content,
+        });
+      }
     });
 
-    // Build the complete request
+    // 3. Susun objek payload akhir
     const requestBody: Record<string, any> = {
       model: settings.model,
-      messages: messages,
+      messages: messages, // Sesi lengkap berisikan ingatan masa lalu kini terkirim utuh!
       stream: true,
       temperature: 0.7,
       max_tokens: 4096,
     };
 
-    // Add pro-specific parameters if using deepseek-v4-pro
-    if (settings.model === 'deepseek-v4-pro') {
-      requestBody.reasoning_mode = settings.proOption === 'thinking' ? 'deep' : 'fast';
-    }
+    // Tentukan mode reasoning secara dinamis untuk semua model DeepSeek v4
+    requestBody.thinking = {
+      type: settings.proOption === 'thinking' ? 'enabled' : 'disabled'
+    };
 
     return requestBody;
   }
@@ -399,6 +405,7 @@ export class DeepseekClient implements IDeepseekClient {
     webview: vscode.Webview
   ): Promise<Message> {
     let lastError: Error | null = null;
+    
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -419,6 +426,10 @@ export class DeepseekClient implements IDeepseekClient {
         console.warn(`[DeepseekClient] Stream attempt ${attempt} failed:`, lastError.message);
         
         if (attempt < MAX_RETRIES) {
+          // ✅ Bersihkan memori sisa dari attempt yang gagal sebelum mencoba ulang
+          this.accumulatedContent = '';
+          this.accumulatedReasoning = '';
+
           // Notify webview about retry
           webview.postMessage(
             createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
@@ -449,6 +460,18 @@ export class DeepseekClient implements IDeepseekClient {
     webview: vscode.Webview
   ): Promise<Message> {
     const url = `${DEEPSEEK_API_BASE_URL}${CHAT_COMPLETIONS_ENDPOINT}`;
+
+    console.log('==========================================================================');
+    console.log('[DEBUG BACKEND ➔ DEEPSEEK API CALL]');
+    console.log(`URL Endpoint : ${url}`);
+    console.log('Headers      :', JSON.stringify({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.substring(0, 7)}...[REDACTED]`, // Aman dari kebocoran key penuh di log
+      'Accept': 'text/event-stream',
+    }, null, 2));
+    console.log('Payload Body :');
+    console.log(JSON.stringify(requestBody, null, 2)); // Memformat struktur JSON riwayat & parameter
+    console.log('==========================================================================');
     
     const response = await fetch(url, {
       method: 'POST',
@@ -537,17 +560,15 @@ export class DeepseekClient implements IDeepseekClient {
       // Extract reasoning content (DeepSeek-specific field)
       const reasoningContent = delta.reasoning_content || delta.thinking;
       
-      // 🎯 FIX FATAL DI SINI: Hanya loloskan token reasoning jika saklar isThinkingEnabled bernilai TRUE!
-      if (reasoningContent && reasoningContent.trim() !== '') {
+      // 🎯 GERBANG PENGAMAN UTAMA: Hanya kumpulkan dan stream jika mode thinking AKTIF!
+      if (this.isThinkingEnabled && reasoningContent && reasoningContent.trim() !== '') {
         this.accumulatedReasoning += reasoningContent;
         
-        if (this.isThinkingEnabled) {
-          webview.postMessage(
-            createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
-              reasoningContent: reasoningContent,
-            })
-          );
-        }
+        webview.postMessage(
+          createExtensionEnvelope(ExtensionCommand.STREAM_CHUNK, {
+            reasoningContent: reasoningContent,
+          })
+        );
       }
 
       // Extract regular content
@@ -562,27 +583,25 @@ export class DeepseekClient implements IDeepseekClient {
       }
     } catch (error) {
       console.error('[DeepseekClient] Failed to parse SSE chunk:', error);
-      // Continue processing despite parse errors
     }
   }
 
   /**
    * Builds the final Message object from accumulated content.
-   * 
-   * @returns Complete Message object
+   * * @returns Complete Message object
    */
   private buildFinalMessage(): Message {
     const finalMessage: Message = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       role: 'assistant',
       content: this.accumulatedContent,
-      thinkContent: this.accumulatedReasoning || undefined,
+      // 🎯 PROTEKSI DATABASE: Jika toggle dimatikan, pastikan properti thinkContent murni bernilai undefined!
+      thinkContent: this.isThinkingEnabled && this.accumulatedReasoning ? this.accumulatedReasoning : undefined,
       timestamp: Date.now(),
     };
 
     return finalMessage;
   }
-
   // ==========================================================================
   // PRIVATE METHODS - ERROR HANDLING
   // ==========================================================================
@@ -677,10 +696,6 @@ export class DeepseekClient implements IDeepseekClient {
       })
     );
   }
-
-  // ==========================================================================
-  // UTILITY METHODS
-  // ==========================================================================
 
   /**
    * Creates a delay for retry logic.

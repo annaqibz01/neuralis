@@ -52,12 +52,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   mode: 'chat' as AiMode,
 };
 
-/** Mapping of settings keys to their configuration paths */
-const SETTINGS_KEY_MAP: Record<string, string> = {
-  model: 'model',
-  proOption: 'proOption',
-  mode: 'mode',
-};
+
 
 // ============================================================================
 // CONFIG MANAGER INTERFACE
@@ -77,9 +72,6 @@ export interface IConfigManager {
   /** Checks if an API key is configured in secret storage */
   hasApiKey(): Promise<boolean>;
   
-  /** Gets the API key from secret storage if configured */
-  getApiKey(): Promise<string | undefined>;
-
   /** Gets the API key from secret storage if configured */
   getApiKey(): Promise<string | undefined>;
 
@@ -147,29 +139,10 @@ export class ConfigManager implements IConfigManager {
    */
   public async load(): Promise<AiSettings> {
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      
-      // Read each setting with type-safe fallback defaults
-      const model = this.readModelSetting(config);
-      const proOption = this.readProOptionSetting(config);
-      const mode = this.readModeSetting(config);
-      
-      const settings: AiSettings = {
-        model,
-        proOption,
-        mode,
-      };
-
-      console.log('[ConfigManager] Settings loaded successfully:', {
-        model: settings.model,
-        proOption: settings.proOption,
-        mode: settings.mode,
-      });
-
-      return settings;
+      const savedSettings = this.context.globalState.get<AiSettings>('neuralis.ai_settings', DEFAULT_SETTINGS);
+      return { ...DEFAULT_SETTINGS, ...savedSettings };
     } catch (error) {
       console.error('[ConfigManager] Failed to load settings:', error);
-      // Return safe defaults on error to prevent runtime crashes
       return { ...DEFAULT_SETTINGS };
     }
   }
@@ -181,27 +154,28 @@ export class ConfigManager implements IConfigManager {
    * @param settings - Partial settings object to save
    */
   public async save(settings: Partial<AiSettings>): Promise<void> {
-    if (!settings || Object.keys(settings).length === 0) {
-      console.warn('[ConfigManager] No settings provided to save');
-      return;
-    }
+    if (!settings || Object.keys(settings).length === 0) return;
 
     try {
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+      const currentSettings = await this.load();
 
-      // Process each provided setting
-      for (const [key, value] of Object.entries(settings)) {
-        // Handle API key separately using secure storage
-        if (key === 'apiKey') {
-          await this.saveApiKey(value as string | undefined);
-          continue;
+      // Jika ada apiKey, langsung amankan ke SecretStorage
+      if ('apiKey' in settings) {
+        if (settings.apiKey && settings.apiKey.trim().length > 0) {
+          await this.context.secrets.store(API_KEY_SECRET_ID, settings.apiKey.trim());
+        } else {
+          await this.context.secrets.delete(API_KEY_SECRET_ID);
         }
-
-        // Save non-sensitive settings to VS Code configuration
-        await this.saveConfigurationSetting(config, key, value);
       }
 
-      console.log('[ConfigManager] Settings saved successfully');
+      // Simpan setelan sisanya ke globalState internal
+      const updatedSettings = {
+        model: settings.model !== undefined ? settings.model : currentSettings.model,
+        proOption: settings.proOption !== undefined ? settings.proOption : currentSettings.proOption,
+        mode: settings.mode !== undefined ? settings.mode : currentSettings.mode,
+      };
+
+      await this.context.globalState.update('neuralis.ai_settings', updatedSettings);
     } catch (error) {
       console.error('[ConfigManager] Failed to save settings:', error);
       throw new Error('Failed to save configuration settings');
@@ -264,30 +238,12 @@ export class ConfigManager implements IConfigManager {
    */
   public async clearAll(): Promise<void> {
     try {
-      // Clear API key from secret storage
-      try {
-        await this.context.secrets.delete(API_KEY_SECRET_ID);
-      } catch {
-        // Ignore if key doesn't exist
-      }
-
+      await this.context.secrets.delete(API_KEY_SECRET_ID);
       await this.context.globalState.update(MODELS_STATE_KEY, undefined);
-
-      // Reset configuration settings to defaults
-      const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-      
-      for (const key of Object.keys(SETTINGS_KEY_MAP)) {
-        try {
-          await config.update(key, undefined, vscode.ConfigurationTarget.Global);
-        } catch {
-          // Ignore if setting doesn't exist
-        }
-      }
-
-      console.log('[ConfigManager] All settings cleared successfully');
+      await this.context.globalState.update('neuralis.ai_settings', undefined);
+      console.log('[ConfigManager] Pembersihan data internal selesai.');
     } catch (error) {
       console.error('[ConfigManager] Failed to clear settings:', error);
-      throw new Error('Failed to clear all configuration');
     }
   }
 
@@ -301,15 +257,6 @@ export class ConfigManager implements IConfigManager {
    * @param config - VS Code workspace configuration
    * @returns Validated AiModel value
    */
-  private readModelSetting(config: vscode.WorkspaceConfiguration): AiModel {
-    const value = config.get<string>('model');
-    
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value as AiModel;
-    }
-    
-    return DEFAULT_SETTINGS.model;
-  }
 
   /**
    * Reads and validates the proOption setting.
@@ -317,33 +264,14 @@ export class ConfigManager implements IConfigManager {
    * @param config - VS Code workspace configuration
    * @returns Validated ProOption value
    */
-  private readProOptionSetting(config: vscode.WorkspaceConfiguration): ProOption {
-    const value = config.get<string>('proOption');
-    const validOptions: ProOption[] = ['fast', 'thinking'];
-    
-    if (value && validOptions.includes(value as ProOption)) {
-      return value as ProOption;
-    }
-    
-    return DEFAULT_SETTINGS.proOption;
-  }
-
+  
   /**
    * Reads and validates the mode setting.
    * 
    * @param config - VS Code workspace configuration
    * @returns Validated AiMode value
    */
-  private readModeSetting(config: vscode.WorkspaceConfiguration): AiMode {
-    const value = config.get<string>('mode');
-    const validModes: AiMode[] = ['chat', 'planning', 'agent', 'coder'];
-    
-    if (value && validModes.includes(value as AiMode)) {
-      return value as AiMode;
-    }
-    
-    return DEFAULT_SETTINGS.mode;
-  }
+  
 
   // ==========================================================================
   // PRIVATE HELPERS - SETTINGS SAVING
@@ -357,37 +285,7 @@ export class ConfigManager implements IConfigManager {
    * @param key - The setting key
    * @param value - The setting value to save
    */
-  private async saveConfigurationSetting(
-    config: vscode.WorkspaceConfiguration,
-    key: string,
-    value: any
-  ): Promise<void> {
-    // Skip if value is undefined (handled by delete if needed)
-    if (value === undefined) {
-      return;
-    }
-
-    const configKey = SETTINGS_KEY_MAP[key];
-    if (!configKey) {
-      console.warn(`[ConfigManager] Unknown setting key: ${key}`);
-      return;
-    }
-
-    // Validate the value based on the setting type
-    const validatedValue = this.validateSettingValue(key, value);
-    if (validatedValue === undefined) {
-      console.warn(`[ConfigManager] Invalid value for setting ${key}:`, value);
-      return;
-    }
-
-    try {
-      await config.update(configKey, validatedValue, vscode.ConfigurationTarget.Global);
-      console.log(`[ConfigManager] Setting ${key} updated to:`, validatedValue);
-    } catch (error) {
-      console.error(`[ConfigManager] Failed to update setting ${key}:`, error);
-      throw new Error(`Failed to save configuration setting: ${key}`);
-    }
-  }
+  
 
   /**
    * Validates and sanitizes a setting value based on its type.
@@ -397,25 +295,7 @@ export class ConfigManager implements IConfigManager {
    * @param value - The value to validate
    * @returns Validated value or undefined if invalid
    */
-  private validateSettingValue(key: string, value: any): any {
-    switch (key) {
-      case 'model': {
-        return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
-      }
-      
-      case 'proOption': {
-        return ['fast', 'thinking'].includes(value) ? value : 'fast';
-      }
-      
-      case 'mode': {
-        return ['chat', 'coder', 'planning', 'agent'].includes(value) ? value : 'chat';
-      }
-      
-      default:
-        throw new Error(`Invalid configuration key: ${key}`);
-    }
-  }
-
+  
   /**
    * Saves the API key to VS Code secret storage.
    * Handles both setting and clearing the key.
