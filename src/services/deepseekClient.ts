@@ -469,6 +469,31 @@ export class DeepseekClient implements IDeepseekClient {
     throw lastError || new Error('Max retries exceeded');
   }
 
+  public async generateShortTitle(prompt: string): Promise<string> {
+    const apiKey = await this.configManager.getApiKey();
+    
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model: 'deepseek-v4-flash',
+            messages: [{ 
+                role: 'user', 
+                content: `Summarize this into a 3-word title. No quotes, no preamble: "${prompt}"` 
+            }],
+            stream: false,
+            max_tokens: 30,
+            temperature: 0.3,
+        }),
+    });
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content?.trim() || "New Session";
+}
+
   /**
    * Sends the actual streaming request to the DeepSeek API.
    * Processes SSE data chunks in real-time.

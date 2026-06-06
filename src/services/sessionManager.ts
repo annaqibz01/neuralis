@@ -61,6 +61,8 @@ export interface ISessionManager {
   
   /** Saves a session to persistent storage */
   saveSession(session: SessionDetail): Promise<void>;
+
+  updateSessionTitle(sessionId: string, newTitle: string): Promise<void>;
 }
 
 // ============================================================================
@@ -106,6 +108,15 @@ export class SessionManager implements ISessionManager {
       throw new Error('Failed to initialize session storage directory');
     }
   }
+
+  public async updateSessionTitle(sessionId: string, newTitle: string): Promise<void> {
+  const session = await this.loadSession(sessionId);
+  if (session) {
+    session.title = newTitle;
+    await this.saveSession(session);
+    console.log(`[SessionManager] Title updated for ${sessionId}: ${newTitle}`);
+  }
+}
 
   /**
    * Generates a unique session ID with timestamp and random component.

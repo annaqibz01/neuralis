@@ -48,6 +48,8 @@ interface ISessionManager {
   deleteSession(sessionId: string): Promise<void>;
   /** Saves a session to persistent storage */
   saveSession(session: SessionDetail): Promise<void>;
+
+  updateSessionTitle(sessionId: string, newTitle: string): Promise<void>;
 }
 
 /**
@@ -86,6 +88,7 @@ interface IDeepseekClient {
   abortActiveStream(): Promise<void>;
   /** Checks if there's an active stream */
   isStreaming(): boolean;
+  generateShortTitle(prompt: string): Promise<string>;
 }
 
 
@@ -383,19 +386,20 @@ export class MessageRouter {
       })
     );
 
-    // ✨ POTONGAN KODE PERBAIKAN: Paksa buat sesi baru yang bersih setiap kali startup / refresh
-    const newSession = await this.sessionManager.createNewSession();
-    
-    // Kirim detail sesi kosong ini ke Frontend React agar langsung memicu Empty State
-    webview.postMessage(
-      createExtensionEnvelope(ExtensionCommand.SEND_SESSION_DETAIL, {
-        session: newSession,
-      })
-    );
 
     // Automatically request session list setelah initialization agar sidebar riwayat sinkron
     await this.handleRequestSessionList(webview);
   }
+
+  private async cleanupEmptySessions() {
+    const sessions = await this.sessionManager.listSessions();
+    for (const s of sessions) {
+        const detail = await this.sessionManager.loadSession(s.id);
+        if (detail && detail.messages.length === 0) {
+            await this.sessionManager.deleteSession(s.id);
+        }
+    }
+}
 
   /**
    * Handles the REQUEST_SESSION_LIST command.
@@ -488,6 +492,15 @@ export class MessageRouter {
     );
   }
 
+  private async generateAndSaveTitle(sessionId: string, firstPrompt: string, webview: vscode.Webview) {
+    // 🎯 Panggil melalui deepseekClient
+    const title = await this.deepseekClient.generateShortTitle(firstPrompt);
+    if (title) {
+        await this.sessionManager.updateSessionTitle(sessionId, title);
+        await this.handleRequestSessionList(webview);
+    }
+}
+
   /**
    * Handles the SEND_MESSAGE command.
    * Initiates streaming response from the AI client.
@@ -512,7 +525,10 @@ export class MessageRouter {
     // Create or get current session
     const sessions = await this.sessionManager.listSessions();
     let currentSession = sessions.length > 0 ? await this.sessionManager.loadSession(sessions[0].id) : null;
-    if (!currentSession) currentSession = await this.sessionManager.createNewSession();
+    if (!currentSession) {
+        currentSession = await this.sessionManager.createNewSession();
+    }
+    const isNewSession = currentSession.messages.length === 0;
     
     const userMessage: Message = {
       id: `msg_${Date.now()}_user`,
@@ -532,6 +548,11 @@ export class MessageRouter {
         session: currentSession,
       })
     );
+
+    if (isNewSession) {
+    // 🎯 Panggil melalui deepseekClient, BUKAN this.generateAndSaveTitle
+    await this.generateAndSaveTitle(currentSession.id, prompt, webview);
+}
 
     try {
       // 🔄 C. Jalankan proses streaming tokens dari DeepSeek API
@@ -555,6 +576,7 @@ export class MessageRouter {
       console.error('[MessageRouter] Error during AI stream execution:', streamError);
     }
   }
+
   /**
    * Handles the CANCEL_STREAM command.
    * Aborts the active streaming request.
