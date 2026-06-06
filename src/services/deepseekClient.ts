@@ -282,50 +282,59 @@ export class DeepseekClient implements IDeepseekClient {
   ): Record<string, any> {
     const messages: Array<Record<string, any>> = [];
 
-    // 1. Tambahkan system message di awal array sesuai mode yang dipilih
-    const systemMessage = this.buildSystemMessage(settings.mode);
-    if (systemMessage) {
-      messages.push({
-        role: 'system',
-        content: systemMessage,
-      });
-    }
+    // 1. AMBIL KONFIGURASI MODE (Instruction & Temperature)
+    const modeConfig = this.getModeConfig(settings.mode);
 
-    // 2. Petakan seluruh riwayat pesan dari frontend ke format API DeepSeek
+    // 2. SYSTEM PROMPT DINAMIS DI INDEX 0
+    messages.push({
+      role: 'system',
+      content: `You are Neuralis, an advanced context-aware AI.\n\nCURRENT PERSONA INSTRUCTION:\n${modeConfig.instruction}`
+    });
+
+    // 3. PETAKAN RIWAYAT PESAN DENGAN MURNI
     (sessionMessages || []).forEach((msg, index) => {
+      const isLastMessage = index === sessionMessages.length - 1;
+
       if (msg.role === 'user') {
-        // Jika ini adalah pesan user paling terakhir (pesan aktif saat ini) dan ada file context,
-        // selipkan informasi file tepat di atas teks prompt user tersebut.
-        if (index === sessionMessages.length - 1 && files && files.length > 0) {
-          const fileContext = this.buildFileContextMessage(files);
-          messages.push({
-            role: 'user',
-            content: `${fileContext}\n\n${msg.content}`,
-          });
-        } else {
-          messages.push({
-            role: 'user',
-            content: msg.content,
-          });
+        let finalContent = msg.content;
+
+        // Hanya tambahkan konteks file di prompt terakhir (current prompt)
+        if (isLastMessage && files && files.length > 0) {
+          finalContent = `${this.buildFileContextMessage(files)}\n\n${finalContent}`;
         }
-      } else if (msg.role === 'assistant') {
+
         messages.push({
+          role: 'user',
+          content: finalContent,
+        });
+      } else if (msg.role === 'assistant') {
+        const assistantPayload: Record<string, any> = {
           role: 'assistant',
           content: msg.content,
-        });
+        };
+
+        // Memasukkan kembali thinking block (CoT) agar logika AI tidak terputus
+        if (msg.thinkContent) {
+          if (settings.model.toLowerCase().includes('deepseek')) {
+            assistantPayload.reasoning_content = msg.thinkContent;
+          } else {
+            assistantPayload.content = `<think>\n${msg.thinkContent}\n</think>\n\n${msg.content}`;
+          }
+        }
+
+        messages.push(assistantPayload);
       }
     });
 
-    // 3. Susun objek payload akhir
+    // 4. SUSUN PAYLOAD AKHIR DENGAN DYNAMIC TEMPERATURE
     const requestBody: Record<string, any> = {
       model: settings.model,
-      messages: messages, // Sesi lengkap berisikan ingatan masa lalu kini terkirim utuh!
+      messages: messages,
       stream: true,
-      temperature: 0.7,
+      temperature: modeConfig.temperature, // 🔥 Disuntikkan secara dinamis berdasarkan mode!
       max_tokens: 4096,
     };
 
-    // Tentukan mode reasoning secara dinamis untuk semua model DeepSeek v4
     requestBody.thinking = {
       type: settings.proOption === 'thinking' ? 'enabled' : 'disabled'
     };
@@ -340,22 +349,37 @@ export class DeepseekClient implements IDeepseekClient {
    * @param mode - The AI agent persona mode
    * @returns System message string or empty string
    */
-  private buildSystemMessage(mode: AiMode): string {
+  private getModeConfig(mode: AiMode): { instruction: string; temperature: number } {
     switch (mode) {
       case 'chat':
-        return 'You are a helpful AI assistant. Respond conversationally and naturally.';
-      
-      case 'planning':
-        return 'You are a strategic planning assistant. Break down complex tasks into actionable steps. Provide clear timelines, dependencies, and risk assessments.';
-      
-      case 'agent':
-        return 'You are an autonomous AI agent. Take initiative to solve problems, suggest actions, and provide detailed execution plans. Use tools and APIs when appropriate.';
+        return {
+          instruction: 'You are a highly intelligent, empathetic, and conversational AI assistant. Your goal is to provide helpful, concise, and natural responses. Adapt your tone to the user\'s mood, be engaging, and communicate with clarity.',
+          temperature: 0.7 // Kreativitas dan keluwesan tinggi
+        };
       
       case 'coder':
-        return 'You are an expert programming assistant. Provide well-documented, efficient code solutions. Explain your reasoning and best practices. Always include code examples in markdown code blocks.';
+        return {
+          instruction: 'You are an elite, senior software engineer and technical architect. Provide highly optimized, secure, and well-documented code solutions. Always explain the underlying logic, highlight edge cases, and enforce best practices. Use clean markdown for code blocks. If a request is ambiguous, state your assumptions logically. Do not hallucinate APIs or functions.',
+          temperature: 0.1 // Sangat deterministik, presisi absolut, nol halusinasi
+        };
+      
+      case 'planning':
+        return {
+          instruction: 'You are a strategic project manager and systems architect. Your primary function is to break down complex requests into structured, actionable, and logical steps. Emphasize dependencies, timelines, and risk management. Always format your responses using clear bullet points, numbered lists, or tables for maximum readability.',
+          temperature: 0.4 // Keseimbangan antara struktur logis dan sedikit fleksibilitas taktis
+        };
+      
+      case 'agent':
+        return {
+          instruction: 'You are an autonomous, proactive problem-solving agent. Analyze the user\'s objective deeply, outline a step-by-step execution plan, and simulate the execution of those steps logically. Focus on decisive, efficient, and self-correcting logic. Point out potential flaws in the user\'s original premise if necessary.',
+          temperature: 0.3 // Logika deduktif yang tajam
+        };
       
       default:
-        return '';
+        return {
+          instruction: 'You are a helpful AI assistant.',
+          temperature: 0.7
+        };
     }
   }
 
@@ -501,6 +525,10 @@ export class DeepseekClient implements IDeepseekClient {
 
     try {
       while (true) {
+        if (!this.isStreamActive) {
+          await reader.cancel(); // 🚀 Ini cara API untuk berhenti secara elegan
+          break;
+        }
         const { done, value } = await reader.read();
         
         if (done) {
@@ -546,8 +574,16 @@ export class DeepseekClient implements IDeepseekClient {
    */
   private processStreamChunk(data: string, webview: vscode.Webview): void {
     try {
-      const chunk = JSON.parse(data) as DeepSeekStreamChunk;
-      
+      const chunk = JSON.parse(data) as DeepSeekStreamChunk & { usage?: any };
+      //const chunk = JSON.parse(data) as DeepSeekStreamChunk;
+      const hasFinishReason = chunk.choices && chunk.choices.length > 0 && chunk.choices[0].finish_reason !== null;
+      if (hasFinishReason || chunk.usage) {
+        console.log('\n==========================================================================');
+        console.log('[DEBUG BACKEND ➔ RAW FINAL STREAM CHUNK]');
+        console.log(JSON.stringify(chunk, null, 2));
+        console.log('==========================================================================\n');
+      }
+
       if (!chunk.choices || chunk.choices.length === 0) {
         return;
       }

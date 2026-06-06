@@ -1,5 +1,3 @@
-// webview-ui/src/components/Chat/ChatInput.tsx
-
 import React, { useRef, useEffect, useState } from 'react';
 import { ContextFile } from '../../contracts/webview.contracts';
 
@@ -23,6 +21,7 @@ interface ChatInputProps {
 }
 
 const ChatInput: React.FC<ChatInputProps> = (props) => {
+  console.log("ChatInput props check:", props.onCancelStream);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isReasoning, setIsReasoning] = useState<boolean>(false);
 
@@ -45,6 +44,10 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      
+      // 🎯 PROTEKSI BACKGROUND: Jika sedang streaming, enter diabaikan secara silent
+      if (props.isStreaming) return;
+
       const content = textareaRef.current?.value || '';
       if (!content.trim() && props.attachedFiles.length === 0) return;
       
@@ -66,15 +69,14 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
           scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
         }
         .island-textarea::-webkit-scrollbar {
-          width: 14px !important; /* Area klik lebih lebar agar mudah ditarik */
+          width: 14px !important;
         }
         .island-textarea::-webkit-scrollbar-track {
-          background: transparent !important; /* Paksa hapus background hitam jelek */
+          background: transparent !important;
         }
         .island-textarea::-webkit-scrollbar-thumb {
           background-color: var(--vscode-scrollbarSlider-background) !important;
           border-radius: 20px !important;
-          /* Trik padding-box membuat scrollbar tampak langsing dan mengambang di tengah */
           border: 4px solid transparent !important; 
           background-clip: padding-box !important;
         }
@@ -97,34 +99,33 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
             <div key={file.path} className="flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-full bg-[var(--vscode-editor-inactiveSelectionBackground)] border border-[var(--vscode-panel-border)] text-[11px] font-mono shadow-sm">
               <span className="opacity-70">📄</span>
               <span className="text-[var(--vscode-editor-foreground)] truncate max-w-[150px]">{file.name}</span>
-              <button onClick={() => props.removeFileFromAttachment(file.path)} className="w-5 h-5 rounded-full hover:bg-[var(--vscode-list-hoverBackground)] flex items-center justify-center text-[10px] opacity-60 hover:opacity-100 transition-colors">✕</button>
+              <button type="button" onClick={() => props.removeFileFromAttachment(file.path)} className="w-5 h-5 rounded-full hover:bg-[var(--vscode-list-hoverBackground)] flex items-center justify-center text-[10px] opacity-60 hover:opacity-100 transition-colors">✕</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* 
-        🛠️ LAYOUT BARU: flex items-end
-        Memaksa tombol selalu berada di dasar sejajar dengan teks, dan memisahkan area teks dengan area tombol.
-      */}
+      {/* Layout Box */}
       <div className="flex items-end w-full relative px-2 py-2 z-10 gap-1.5">
         
-        {/* Textarea Area (Scrollbar muncul di sisi kanan kotak ini, sebelum tombol) */}
+        {/* Textarea Area */}
         <textarea
           ref={textareaRef}
           onKeyDown={handleKeyDown}
           onChange={(e) => { adjustHeight(); props.handleFileSearch(e); }}
           placeholder="Ask Neuralis or attach context..."
-          className="island-textarea flex-1 outline-none bg-transparent resize-none py-2.5 pl-3 pr-1 text-[14px] leading-relaxed text-[var(--vscode-input-foreground)] placeholder:text-[var(--vscode-descriptionForeground)] placeholder:opacity-80 min-h-[44px] max-h-[200px] overflow-y-auto"
+          className="island-textarea flex-1 outline-none bg-transparent resize-none py-2.5 pl-3 pr-1 text-[14px] leading-relaxed text-[var(--vscode-input-foreground)] placeholder:text-[var(--vscode-descriptionForeground)] placeholder:opacity-80 min-h-[44px] max-h-[200px] overflow-y-auto transition-all duration-200"
           rows={1}
         />
         
-        {/* Tombol Area (Terkunci di kanan bawah, tidak terpengaruh scroll) */}
+        {/* Tombol Area */}
         <div className="flex items-center gap-1.5 shrink-0 mb-[5px] pr-1">
           
           {/* Tombol Toggle Reasoning */}
           <button
-            onClick={() => setIsReasoning(!isReasoning)}
+            type="button"
+            onClick={() => !props.isStreaming && setIsReasoning(!isReasoning)}
+            disabled={props.isStreaming}
             className={`relative flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300 border overflow-hidden shrink-0 ${
               isReasoning 
                 ? 'border-[var(--vscode-textLink-foreground)] text-[var(--vscode-textLink-foreground)] shadow-[0_0_10px_var(--vscode-textLink-foreground)]' 
@@ -140,12 +141,26 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
 
           {/* Tombol Send / Stop */}
           {props.isStreaming ? (
-            <button onClick={props.onCancelStream} className="flex items-center justify-center w-8 h-8 rounded-full text-[var(--vscode-editor-foreground)] hover:bg-[var(--vscode-list-hoverBackground)] shrink-0 transition-colors" title="Stop">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+            <button 
+              key="btn-stop-active"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log("Tombol Stop diklik, memanggil onCancelStream...");
+                props.onCancelStream?.();
+              }} 
+              className="flex items-center justify-center w-8 h-8 rounded-full text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 shrink-0 transition-all cursor-pointer z-50" 
+              title="Stop"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
             </button>
           ) : (
             <button 
-              onClick={() => {
+              key="btn-send-inactive"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
                 const content = textareaRef.current?.value || '';
                 if (content.trim() || props.attachedFiles.length > 0) {
                   props.onSendMessage(content, props.attachedFiles, isReasoning);
@@ -166,7 +181,7 @@ const ChatInput: React.FC<ChatInputProps> = (props) => {
         <div className="absolute bottom-[100%] left-4 right-4 mb-4 max-h-[180px] overflow-y-auto z-50 rounded-2xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editorWidget-background)] shadow-2xl p-1.5 flex flex-col gap-0.5 animate-in slide-in-from-bottom-2 duration-200">
           <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--vscode-descriptionForeground)] mb-1">Workspace Files Context</div>
           {props.filteredWorkspaceFiles.slice(0, 20).map((filePath) => (
-            <button key={filePath} onClick={() => { props.addFileToAttachment(filePath); props.setShowFileDropdown(false); if (textareaRef.current) { textareaRef.current.value = textareaRef.current.value.replace(/@\S*$/, ''); textareaRef.current.focus(); } }} className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--vscode-list-hoverBackground)] flex flex-col gap-0.5 group transition-colors">
+            <button key={filePath} type="button" onClick={() => { props.addFileToAttachment(filePath); props.setShowFileDropdown(false); if (textareaRef.current) { textareaRef.current.value = textareaRef.current.value.replace(/@\S*$/, ''); textareaRef.current.focus(); } }} className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--vscode-list-hoverBackground)] flex flex-col gap-0.5 group transition-colors">
               <span className="text-[12px] text-[var(--vscode-editor-foreground)] truncate font-medium">{filePath.split('/').pop()}</span>
               <span className="text-[10px] text-[var(--vscode-descriptionForeground)] truncate font-mono">{filePath}</span>
             </button>

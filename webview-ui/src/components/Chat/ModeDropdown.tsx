@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AiSettings, WebviewMessageSender, AiMode } from '../../contracts/webview.contracts';
 
 interface ModeDropdownProps {
@@ -15,13 +15,19 @@ const MODES: { id: AiMode; name: string; icon: string; desc: string }[] = [
 
 export const ModeDropdown: React.FC<ModeDropdownProps> = ({ aiSettings, ipcSender }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const currentModeId = aiSettings?.mode || 'chat';
   
+  // ✨ OPTIMISTIC STATE ✨
+  const [optimisticMode, setOptimisticMode] = useState<AiMode>(aiSettings?.mode || 'chat');
+
+  useEffect(() => {
+    if (aiSettings?.mode) setOptimisticMode(aiSettings.mode);
+  }, [aiSettings?.mode]);
+
+  const currentModeId = optimisticMode;
   const activeMode = MODES.find(m => m.id === currentModeId) || MODES[0];
 
   return (
     <div className="relative">
-      {/* Tombol Pemicu Utama */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-transparent hover:bg-[var(--vscode-list-hoverBackground)] text-[11px] font-semibold text-[var(--vscode-foreground)] tracking-tight transition-colors outline-none border-none"
@@ -34,18 +40,17 @@ export const ModeDropdown: React.FC<ModeDropdownProps> = ({ aiSettings, ipcSende
         </svg>
       </button>
 
-      {/* Panel List Pilihan */}
       {isOpen && (
         <>
-          {/* Backdrop Transparan */}
           <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsOpen(false)} />
           
-          {/* Kotak Menu Opsi */}
           <div className="absolute top-full left-0 mt-1.5 w-56 rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl z-50 p-1 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
             {MODES.map((mode) => (
               <button
                 key={mode.id}
                 onClick={() => {
+                  // ✨ UI Instan Update ✨
+                  setOptimisticMode(mode.id);
                   ipcSender?.saveSettings({ mode: mode.id });
                   setIsOpen(false);
                 }}

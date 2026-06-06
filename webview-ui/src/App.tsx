@@ -113,6 +113,14 @@ const App: React.FC = () => {
         );
 
         ipcManager.receiver.on(
+          ExtensionCommand.SEND_SETTINGS,
+          (payload: { settings: AiSettings; hasApiKey: boolean }) => {
+            if (!isMounted) return;
+            updateState({ aiSettings: payload.settings });
+          }
+        );
+
+        ipcManager.receiver.on(
           ExtensionCommand.SEND_SESSION_DETAIL,
           (payload: { session: SessionDetail }) => {
             if (!isMounted) return;
@@ -214,6 +222,18 @@ const App: React.FC = () => {
     updateState({ currentPage: page, error: null });
   }, [updateState]);
 
+  const handleCancelStream = useCallback(() => {
+    const currentIpc = ipcManagerRef.current; 
+    if (currentIpc && currentIpc.sender) {
+      currentIpc.sender.cancelStream();
+    } else {
+      // Fallback darurat jika object sender kehilangan binding
+      console.warn('[App] Sender stale, firing direct postMessage fallback');
+      const vscodeApi = (window as any).__VSCODE_API__ || MOCK_VSCODE_API;
+      vscodeApi.postMessage({ command: 'CANCEL_STREAM', payload: undefined });
+    }
+  }, []);
+
   const dismissError = useCallback(() => {
     updateState({ error: null });
   }, [updateState]);
@@ -243,7 +263,7 @@ const App: React.FC = () => {
             globalError={state.error}
             clearGlobalError={dismissError}
             onSendMessage={(prompt, files, isReasoningActive) => {const updatedSettings = {...state.aiSettings,proOption: (isReasoningActive ? 'thinking' : 'fast') as 'fast' | 'thinking'};sender.sendMessage(prompt, updatedSettings, files);}}
-            onCancelStream={() => sender.cancelStream()}
+            onCancelStream={handleCancelStream}
             onNavigateToHistory={() => navigateTo('history')}
             onNavigateToSettings={() => navigateTo('settings')}
             ipcSender={sender}

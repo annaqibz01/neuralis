@@ -560,10 +560,10 @@ export class MessageRouter {
    * Aborts the active streaming request.
    */
   private async handleCancelStream(): Promise<void> {
-    if (this.deepseekClient.isStreaming()) {
-      await this.deepseekClient.abortActiveStream();
-      console.log('[Neuralis] Stream cancelled successfully');
-    }
+    
+    await this.deepseekClient.abortActiveStream();
+    console.log('[Neuralis] Stream cancelled successfully');
+    
   }
 
   /**

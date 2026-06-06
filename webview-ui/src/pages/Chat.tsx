@@ -334,6 +334,7 @@ const Chat: React.FC<ChatProps> = ({ session, aiSettings, registeredModels, isSt
             initialValue={internalInput}
             onSendMessage={(prompt, files, isReasoningActive) => {onSendMessage(prompt, files, isReasoningActive);}}
             isStreaming={isStreaming}
+            onCancelStream={onCancelStream}
             attachedFiles={chat.attachedFiles}
             addFileToAttachment={chat.addFileToAttachment}
             removeFileFromAttachment={chat.removeFileFromAttachment}

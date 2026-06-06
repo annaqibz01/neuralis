@@ -225,9 +225,10 @@ export class WebviewMessageSender {
   /**
    * Requests cancellation of the active stream.
    */
-  public cancelStream(): void {
+  public cancelStream = (): void => {
+    console.log('[IPC Sender] Dispatching CANCEL_STREAM to host...');
     this.send(WebviewCommand.CANCEL_STREAM, undefined);
-  }
+  };
 
   /**
    * Persists partial AI settings to the backend configuration.

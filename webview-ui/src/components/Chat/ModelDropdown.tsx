@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
-import { AiSettings, WebviewMessageSender, RegisteredModel } from '../contracts/webview.contracts';
+import React, { useState, useEffect } from 'react';
+import { AiSettings, WebviewMessageSender, RegisteredModel } from '../../contracts/webview.contracts';
 
 interface ModelDropdownProps {
   aiSettings: AiSettings;
-  registeredModels: RegisteredModel[]; // 👈 Menerima data dinamis dari App.tsx
+  registeredModels: RegisteredModel[];
   ipcSender: WebviewMessageSender | null;
 }
 
 export const ModelDropdown: React.FC<ModelDropdownProps> = ({ aiSettings, registeredModels, ipcSender }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const currentModelId = aiSettings?.model;
+  
+  // ✨ OPTIMISTIC STATE ✨
+  const [optimisticModel, setOptimisticModel] = useState<string | undefined>(aiSettings?.model);
 
-  // Mencari model aktif secara dinamis. Jika belum ada/kosong, gunakan fallback.
+  useEffect(() => {
+    if (aiSettings?.model) setOptimisticModel(aiSettings.model);
+  }, [aiSettings?.model]);
+
+  const currentModelId = optimisticModel;
+
   const activeModel = registeredModels.find(m => m.id === currentModelId) 
                       || registeredModels[0] 
                       || { id: '', name: 'No Engine Selected' };
@@ -32,10 +39,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({ aiSettings, regist
       {/* Panel List Pilihan */}
       {isOpen && (
         <>
-          {/* Backdrop Transparan */}
           <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setIsOpen(false)} />
           
-          {/* Kotak Menu Opsi (Premium Dynamic Layout) */}
           <div className="absolute top-full left-0 mt-1.5 w-56 rounded-xl border border-[var(--vscode-panel-border)] bg-[var(--vscode-editor-background)] shadow-2xl z-50 p-1 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-64 overflow-y-auto custom-scrollbar">
             
             {registeredModels.length === 0 ? (
@@ -47,6 +52,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({ aiSettings, regist
                 <button
                   key={model.id}
                   onClick={() => {
+                    // ✨ UI Instan Update ✨
+                    setOptimisticModel(model.id);
                     ipcSender?.saveSettings({ model: model.id });
                     setIsOpen(false);
                   }}
@@ -63,7 +70,6 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({ aiSettings, regist
                     </span>
                   </div>
                   
-                  {/* Ikon Checkmark jika model ini sedang aktif */}
                   {currentModelId === model.id && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="ml-2 shrink-0">
                       <polyline points="20 6 9 17 4 12"></polyline>
